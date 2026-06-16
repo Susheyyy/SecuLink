@@ -4,7 +4,7 @@ import type { ConsoleLogEntry } from './components/ConsolePanel';
 import { UploadPanel } from './components/UploadPanel';
 import { VaultStatus } from './components/VaultStatus';
 import { DownloadChallenge } from './components/DownloadChallenge';
-import { Terminal, Shield, AlertOctagon } from 'lucide-react';
+import { Terminal, Shield, AlertOctagon, Upload, History, Sun, Moon } from 'lucide-react';
 
 interface SavedLink {
   uuid: string;
@@ -16,19 +16,26 @@ interface SavedLink {
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'download'>('dashboard');
   const [vaultUuid, setVaultUuid] = useState<string | null>(null);
-  
+  const [activeTab, setActiveTab] = useState<'upload' | 'shares' | 'logs'>('upload');
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('seculink_theme');
+    return (saved === 'dark' || saved === 'light') ? saved : 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('seculink_theme', theme);
+  }, [theme]);
+
   const [links, setLinks] = useState<SavedLink[]>(() => {
     const saved = localStorage.getItem('seculink_active_links');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed parsing saved links.', e);
-      }
+      try { return JSON.parse(saved); } catch (e) { console.error('Failed parsing saved links.', e); }
     }
     return [];
   });
-  
+
   const [logs, setLogs] = useState<ConsoleLogEntry[]>([]);
   const [isPurging, setIsPurging] = useState(false);
   const purgeTimeoutRef = useRef<number | null>(null);
@@ -46,8 +53,7 @@ export default function App() {
         setView('dashboard');
       }
     };
-
-    handleHashChange(); 
+    handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
@@ -63,18 +69,14 @@ export default function App() {
 
   useEffect(() => {
     if (!welcomedRef.current) {
-      addLog('info', 'SecuLink Secure File Vault service initialized.');
-      addLog('success', 'Ready for secure upload. Default expiration set to 60 minutes.');
+      addLog('info', 'SecuLink secure vault initialized.');
+      addLog('success', 'Ready for secure upload. Default expiry: 60 minutes.');
       welcomedRef.current = true;
     }
   }, [addLog]);
 
   useEffect(() => {
-    return () => {
-      if (purgeTimeoutRef.current) {
-        window.clearTimeout(purgeTimeoutRef.current);
-      }
-    };
+    return () => { if (purgeTimeoutRef.current) window.clearTimeout(purgeTimeoutRef.current); };
   }, []);
 
   const handleUploadSuccess = useCallback((newLink: SavedLink) => {
@@ -89,35 +91,29 @@ export default function App() {
   const handlePurgeAll = useCallback(() => {
     setLinks([]);
     setIsPurging(true);
-    if (purgeTimeoutRef.current) {
-      window.clearTimeout(purgeTimeoutRef.current);
-    }
+    if (purgeTimeoutRef.current) window.clearTimeout(purgeTimeoutRef.current);
     purgeTimeoutRef.current = window.setTimeout(() => {
       setIsPurging(false);
-      addLog('info', 'All active storage allocations and metadata successfully purged.');
+      addLog('info', 'All allocations and metadata permanently purged.');
     }, 2000);
   }, [addLog]);
 
-  const clearLogs = useCallback(() => {
-    setLogs([]);
-  }, []);
+  const clearLogs = useCallback(() => setLogs([]), []);
 
-  const navigateToDashboard = useCallback(() => {
-    window.location.hash = '';
-  }, []);
+  const navigateToDashboard = useCallback(() => { window.location.hash = ''; }, []);
 
   return (
     <div className="app-container">
-      {/* Purge / Wiping Overlay */}
+      {/* Purge Overlay */}
       {isPurging && (
         <div className="purge-overlay">
           <AlertOctagon className="purge-icon animate-pulse" />
           <h2 className="purge-title">Wiping Vault Shares</h2>
-          <p className="purge-subtitle">Permanently shredding keys and deleting active files from server volumes...</p>
+          <p className="purge-subtitle">Permanently shredding keys and deleting active files from server volumes…</p>
         </div>
       )}
 
-      {/* Main Professional Header */}
+      {/* Header */}
       <header className="main-header">
         <div className="header-logo-container" onClick={navigateToDashboard}>
           <div className="logo-icon-wrapper">
@@ -125,54 +121,93 @@ export default function App() {
           </div>
           <div>
             <h1 className="brand-title">SecuLink</h1>
-            <p className="brand-subtitle">
-              Zero-Knowledge Ephemeral File Sharing Vault
-            </p>
+            <p className="brand-subtitle">Zero-Knowledge Ephemeral File Vault</p>
           </div>
         </div>
-        <div className="status-badge">
-          <span className="status-indicator"></span>
-          <span>Security Protocol Active</span>
-          <span className="divider">|</span>
-          <span>Local Node Online</span>
+
+        <div className="header-actions">
+          <div className="status-badge">
+            <span className="status-indicator" />
+            <span>Protocol Active</span>
+            <span className="divider">|</span>
+            <span>Node Online</span>
+          </div>
+          <button
+            className="btn-theme-toggle"
+            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
+          </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Navigation Tabs */}
+      {view === 'dashboard' && (
+        <nav className="navbar">
+          <div className="nav-tabs-wrapper">
+            <button
+              className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
+              onClick={() => setActiveTab('upload')}
+            >
+              <Upload className="nav-icon" />
+              <span>Upload File</span>
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'shares' ? 'active' : ''}`}
+              onClick={() => setActiveTab('shares')}
+            >
+              <History className="nav-icon" />
+              <span>Active Shares</span>
+              {links.length > 0 && (
+                <span className="badge-count">{links.length}</span>
+              )}
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'logs' ? 'active' : ''}`}
+              onClick={() => setActiveTab('logs')}
+            >
+              <Terminal className="nav-icon" />
+              <span>Activity Log</span>
+              {logs.length > 0 && (
+                <span className="badge-count">{logs.length}</span>
+              )}
+            </button>
+          </div>
+        </nav>
+      )}
+
+      {/* Main Content */}
       <main className="main-content">
         {view === 'dashboard' ? (
           <>
-            <UploadPanel 
-              addLog={addLog} 
-              onUploadSuccess={handleUploadSuccess} 
-            />
-            <VaultStatus 
-              links={links} 
-              onRemoveLink={handleRemoveLink} 
-              onNukeAll={handlePurgeAll}
-              addLog={addLog}
-            />
-            <ConsolePanel 
-              logs={logs} 
-              onClear={clearLogs} 
-            />
+            {activeTab === 'upload' && (
+              <UploadPanel addLog={addLog} onUploadSuccess={handleUploadSuccess} />
+            )}
+            {activeTab === 'shares' && (
+              <VaultStatus
+                links={links}
+                onRemoveLink={handleRemoveLink}
+                onNukeAll={handlePurgeAll}
+                addLog={addLog}
+              />
+            )}
+            {activeTab === 'logs' && (
+              <ConsolePanel logs={logs} onClear={clearLogs} />
+            )}
           </>
         ) : (
-          /* Download Challenge Portal */
           <div className="download-challenge-wrapper">
-            <DownloadChallenge 
-              uuid={vaultUuid!} 
-              onBackToDashboard={navigateToDashboard} 
-            />
+            <DownloadChallenge uuid={vaultUuid!} onBackToDashboard={navigateToDashboard} />
           </div>
         )}
       </main>
 
       <footer className="main-footer">
-        <div>SecuLink Protected File Vault System</div>
+        <span>SecuLink Protected File Vault</span>
         <div className="footer-crypto-info">
           <Terminal className="footer-icon" />
-          <span>AES-256-GCM / PBKDF2 Key Splitting Protocol</span>
+          <span>AES-256-GCM / PBKDF2 Key Splitting</span>
         </div>
       </footer>
     </div>
