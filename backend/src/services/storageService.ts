@@ -48,6 +48,13 @@ export function getFirestoreDB(): any {
   return null;
 }
 
+export function getStorageBucket(): any {
+  if (useFirebase && bucket) {
+    return bucket;
+  }
+  return null;
+}
+
 export async function uploadEncryptedFile(fileHash: string, ciphertext: Buffer): Promise<string> {
   if (useFirebase && bucket) {
     const file = bucket.file(fileHash);

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { getActiveFilesForCleanup, redactFileRecord, writeAuditLog } from './databaseService';
 import { deleteFromStorage } from './storageService';
+import { sendNotificationEmail } from './emailService';
 
 export function initCleanupJob() {
   cron.schedule('* * * * *', async () => {
@@ -24,7 +25,7 @@ export function initCleanupJob() {
 }
 
 export async function shredFile(
-  file: { id?: string; fileHash: string; fileName: string }, 
+  file: { id?: string; fileHash: string; fileName: string; notificationEmail?: string | null }, 
   triggerer: string, 
   reason: string
 ) {
@@ -41,6 +42,20 @@ export async function shredFile(
         ipAddress: triggerer,
         details: `${reason} (Original filename: ${originalName})`,
       });
+
+      if (file.notificationEmail && file.notificationEmail.trim() !== '') {
+        try {
+          await sendNotificationEmail(
+            file.notificationEmail,
+            'SHREDDED',
+            originalName,
+            triggerer,
+            `${reason}`
+          );
+        } catch (mailErr) {
+          console.error('[SHREDDER] Email dispatch failed on shred:', mailErr);
+        }
+      }
 
       console.log(`[SHREDDER] Shredded file ${file.id} successfully.`);
     }

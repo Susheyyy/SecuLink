@@ -15,6 +15,9 @@ export interface FileData {
   downloadCount?: number;
   maxDownloads: number | null;
   isDeleted?: boolean;
+  allowedIp?: string | null;
+  notificationEmail?: string | null;
+  isDirect?: boolean;
 }
 
 export interface LogData {
@@ -26,9 +29,6 @@ export interface LogData {
   createdAt?: Date;
 }
 
-/**
- * Save file metadata to Firestore or Sequelize SQLite database.
- */
 export async function createFileRecord(data: FileData): Promise<any> {
   const db = getFirestoreDB();
   
@@ -46,12 +46,15 @@ export async function createFileRecord(data: FileData): Promise<any> {
       authTag: data.authTag,
       mimeType: data.mimeType,
       fileSize: data.fileSize,
-      expiresAt: adminTimestamp(data.expiresAt), // For Firestore TTL
+      expiresAt: adminTimestamp(data.expiresAt), 
       downloadCount: 0,
       maxDownloads: data.maxDownloads,
       isDeleted: false,
       createdAt: adminTimestamp(new Date()),
-      updatedAt: adminTimestamp(new Date())
+      updatedAt: adminTimestamp(new Date()),
+      allowedIp: data.allowedIp || null,
+      notificationEmail: data.notificationEmail || null,
+      isDirect: data.isDirect || false,
     };
     
     await docRef.set(record);
@@ -68,14 +71,14 @@ export async function createFileRecord(data: FileData): Promise<any> {
       fileSize: data.fileSize,
       expiresAt: data.expiresAt,
       maxDownloads: data.maxDownloads,
+      allowedIp: data.allowedIp || null,
+      notificationEmail: data.notificationEmail || null,
+      isDirect: data.isDirect || false,
     });
     return fileRecord.toJSON();
   }
 }
 
-/**
- * Retrieve metadata for a single file vault link.
- */
 export async function getFileRecord(id: string): Promise<any | null> {
   const db = getFirestoreDB();
   
@@ -95,9 +98,6 @@ export async function getFileRecord(id: string): Promise<any | null> {
   }
 }
 
-/**
- * Redact metadata (ephemeral metadata principle).
- */
 export async function redactFileRecord(id: string, originalName: string, reason: string): Promise<void> {
   const db = getFirestoreDB();
   
@@ -118,9 +118,6 @@ export async function redactFileRecord(id: string, originalName: string, reason:
   }
 }
 
-/**
- * Increment successful downloads log counter.
- */
 export async function incrementDownloadCount(id: string): Promise<void> {
   const db = getFirestoreDB();
   
@@ -140,9 +137,6 @@ export async function incrementDownloadCount(id: string): Promise<void> {
   }
 }
 
-/**
- * Log transactions audit trail.
- */
 export async function writeAuditLog(log: LogData): Promise<void> {
   const db = getFirestoreDB();
   
@@ -166,9 +160,6 @@ export async function writeAuditLog(log: LogData): Promise<void> {
   }
 }
 
-/**
- * Fetch logs for a specific share link.
- */
 export async function getAuditLogs(fileId: string): Promise<any[]> {
   const db = getFirestoreDB();
   
@@ -194,9 +185,6 @@ export async function getAuditLogs(fileId: string): Promise<any[]> {
   }
 }
 
-/**
- * Retrieve all active files (not shredded) for cleanup.
- */
 export async function getActiveFilesForCleanup(nowDate: Date): Promise<FileData[]> {
   const db = getFirestoreDB();
   
@@ -224,9 +212,6 @@ export async function getActiveFilesForCleanup(nowDate: Date): Promise<FileData[
   }
 }
 
-/**
- * Retrieve all active files on server.
- */
 export async function getAllActiveFiles(): Promise<FileData[]> {
   const db = getFirestoreDB();
   
@@ -250,9 +235,6 @@ export async function getAllActiveFiles(): Promise<FileData[]> {
   }
 }
 
-/**
- * Helper to generate firebase-admin firestore timestamp objects safely.
- */
 function adminTimestamp(date: Date): any {
   const adminRef = require('firebase-admin');
   return adminRef.firestore.Timestamp.fromDate(date);

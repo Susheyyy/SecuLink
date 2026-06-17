@@ -15,6 +15,9 @@ export class File extends Model {
   declare downloadCount: number;
   declare maxDownloads: number | null;
   declare isDeleted: boolean;
+  declare allowedIp: string | null;
+  declare notificationEmail: string | null;
+  declare isDirect: boolean;
   declare readonly createdAt: Date;
   declare readonly updatedAt: Date;
 }
@@ -72,6 +75,19 @@ File.init(
       allowNull: true,
     },
     isDeleted: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
+    },
+    allowedIp: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    notificationEmail: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    isDirect: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
       allowNull: false,

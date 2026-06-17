@@ -166,7 +166,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
 
       {!downloadSuccess ? (
         <form onSubmit={handleDownloadSubmit} className="flex flex-col space-y-5 w-full items-center justify-center">
-          {/* File Metadata Overview */}
           <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-2 w-full text-center">
             <div className="text-xxs text-slate-500 tracking-wider font-semibold text-center">FILE DETAILS:</div>
             <div className="text-sm font-bold text-slate-800 truncate text-center max-w-[280px] mx-auto">{meta.fileName}</div>
@@ -181,7 +180,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
             </div>
           </div>
 
-          {/* Password Input Drawer */}
           {meta.hasPassword ? (
             <div className="flex flex-col space-y-2 w-full items-center justify-center text-center">
               <label className="text-xs font-semibold text-slate-700 tracking-wider flex items-center justify-center">
@@ -210,7 +208,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
             </div>
           )}
 
-          {/* Warning indicators for Burn on Read */}
           {meta.burnOnRead && (
             <div className="bg-red-50 border border-red-200 p-3 rounded flex flex-col items-center justify-center text-center max-w-xs w-full">
               <AlertTriangle className="w-5 h-5 text-red-500 mb-1.5" />
@@ -220,7 +217,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
             </div>
           )}
 
-          {/* Action Trigger */}
           <button 
             type="submit"
             disabled={downloading}
@@ -240,7 +236,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
           </button>
         </form>
       ) : (
-        /* Success Screen */
         <div className="flex flex-col space-y-6 py-4 text-center items-center justify-center w-full">
           <div className="w-14 h-14 mx-auto rounded-full border border-green-200 bg-green-50 flex items-center justify-center">
             <FileCheck className="text-green-600 w-6 h-6" />

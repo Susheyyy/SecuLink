@@ -20,6 +20,10 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
   const [statusText, setStatusText] = useState('');
   const [resultLink, setResultLink] = useState('');
   const [copied, setCopied] = useState(false);
+
+  const [allowedIp, setAllowedIp] = useState('');
+  const [notificationEmail, setNotificationEmail] = useState('');
+  const [isDirect, setIsDirect] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -56,66 +60,184 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
     setUploading(true);
     setUploadProgress(10);
-    setStatusText('Initializing secure upload...');
-    addLog('info', `[UPLOAD] Starting upload for file: ${file.name}`);
 
-    setTimeout(async () => {
-      setUploadProgress(35);
-      setStatusText('Encrypting file in memory (AES-256-GCM)...');
-      addLog('success', `[CRYPTO] Envelope key successfully generated.`);
-      addLog('info', `[CRYPTO] Encrypting stream chunks with authenticated tag validations.`);
+    if (isDirect) {
+      setStatusText('Encrypting file in browser (AES-256-GCM)...');
+      addLog('info', `[CRYPTO] Direct Upload selected. Encrypting locally before network transit.`);
+      
+      try {
+        const key = await window.crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        );
+        const rawKey = await window.crypto.subtle.exportKey('raw', key);
+        const keyHex = Array.from(new Uint8Array(rawKey))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const ivHex = Array.from(iv)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const fileBuffer = await file.arrayBuffer();
+        const fullCiphertext = await window.crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv },
+          key,
+          fileBuffer
+        );
+
+        const fullArray = new Uint8Array(fullCiphertext);
+        const ciphertext = fullArray.slice(0, -16);
+        const authTag = fullArray.slice(-16);
+        const authTagHex = Array.from(authTag)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        setUploadProgress(40);
+        setStatusText('Requesting presigned upload URL...');
+        addLog('info', `[NETWORK] Allocating metadata and requesting direct upload credentials...`);
+
+        const randomHash = window.crypto.randomUUID ? window.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+
+        const payload = {
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          expireValue,
+          expireUnit,
+          burnOnRead,
+          password: (hasPassword && password) ? password : '',
+          allowedIp: allowedIp.trim() || null,
+          notificationEmail: notificationEmail.trim() || null,
+          encryptionKey: keyHex,
+          encryptionIv: ivHex,
+          authTag: authTagHex,
+          fileHash: randomHash
+        };
+
+        const response = await fetch('http://localhost:5000/api/vault/signed-upload-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Server failed to generate presigned upload details.');
+        }
+
+        const uploadDetails = await response.json();
+        
+        setUploadProgress(70);
+        setStatusText('Streaming encrypted payload directly to cloud storage...');
+        addLog('info', `[NETWORK] Streaming payload directly to storage...`);
+
+        const uploadResponse = await fetch(uploadDetails.uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream'
+          },
+          body: ciphertext
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload encrypted payload directly to storage.');
+        }
+
+        setUploadProgress(100);
+        setStatusText('Direct upload successful. Secure link generated.');
+        addLog('success', `[VAULT] Zero-Knowledge Direct upload complete! UUID: ${uploadDetails.uuid}`);
+        addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(uploadDetails.expiresAt).toLocaleTimeString()}`);
+
+        const secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${uploadDetails.uuid}`;
+        setResultLink(secureUrl);
+        
+        onUploadSuccess({
+          uuid: uploadDetails.uuid,
+          fileName: file.name,
+          expiresAt: uploadDetails.expiresAt,
+          burnOnRead: burnOnRead
+        });
+
+      } catch (err: any) {
+        console.error(err);
+        setStatusText('Direct upload failed.');
+        addLog('error', `[UPLOAD ERROR] ${err.message || 'Direct upload failure.'}`);
+        setUploadProgress(0);
+      } finally {
+        setUploading(false);
+      }
+    } else {
+      setStatusText('Initializing secure upload...');
+      addLog('info', `[UPLOAD] Starting upload for file: ${file.name}`);
 
       setTimeout(async () => {
-        setUploadProgress(70);
-        setStatusText('Uploading encrypted payload...');
-        addLog('info', `[NETWORK] Transmitting encrypted block to server...`);
+        setUploadProgress(35);
+        setStatusText('Encrypting file in memory (AES-256-GCM)...');
+        addLog('success', `[CRYPTO] Envelope key successfully generated.`);
+        addLog('info', `[CRYPTO] Encrypting stream chunks with authenticated tag validations.`);
 
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('expireValue', expireValue.toString());
-          formData.append('expireUnit', expireUnit);
-          formData.append('burnOnRead', burnOnRead.toString());
-          if (hasPassword && password) {
-            formData.append('password', password);
+        setTimeout(async () => {
+          setUploadProgress(70);
+          setStatusText('Uploading encrypted payload...');
+          addLog('info', `[NETWORK] Transmitting encrypted block to server...`);
+
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('expireValue', expireValue.toString());
+            formData.append('expireUnit', expireUnit);
+            formData.append('burnOnRead', burnOnRead.toString());
+            if (allowedIp.trim()) formData.append('allowedIp', allowedIp.trim());
+            if (notificationEmail.trim()) formData.append('notificationEmail', notificationEmail.trim());
+            if (hasPassword && password) {
+              formData.append('password', password);
+            }
+
+            const response = await fetch('http://localhost:5000/api/vault/upload', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const data = await response.json();
+              throw new Error(data.error || 'Server rejected file upload.');
+            }
+
+            const result = await response.json();
+            setUploadProgress(100);
+            setStatusText('Secure link generated.');
+            addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(result.expiresAt).toLocaleTimeString()}`);
+            
+            const secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${result.uuid}`;
+            setResultLink(secureUrl);
+            
+            onUploadSuccess({
+              uuid: result.uuid,
+              fileName: file.name,
+              expiresAt: result.expiresAt,
+              burnOnRead: result.burnOnRead
+            });
+
+            addLog('success', `[VAULT] File encrypted and saved. UUID: ${result.uuid}`);
+          } catch (error: any) {
+            console.error(error);
+            setStatusText('Upload failed.');
+            addLog('error', `[UPLOAD ERROR] ${error.message || 'Connection failure.'}`);
+            setUploadProgress(0);
+          } finally {
+            setUploading(false);
           }
-
-          const response = await fetch('http://localhost:5000/api/vault/upload', {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Server rejected file upload.');
-          }
-
-          const result = await response.json();
-          setUploadProgress(100);
-          setStatusText('Secure link generated.');
-          addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(result.expiresAt).toLocaleTimeString()}`);
-          
-          const secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${result.uuid}`;
-          setResultLink(secureUrl);
-          
-          onUploadSuccess({
-            uuid: result.uuid,
-            fileName: file.name,
-            expiresAt: result.expiresAt,
-            burnOnRead: result.burnOnRead
-          });
-
-          addLog('success', `[VAULT] File encrypted and saved. UUID: ${result.uuid}`);
-        } catch (error: any) {
-          console.error(error);
-          setStatusText('Upload failed.');
-          addLog('error', `[UPLOAD ERROR] ${error.message || 'Connection failure.'}`);
-          setUploadProgress(0);
-        } finally {
-          setUploading(false);
-        }
+        }, 800);
       }, 800);
-    }, 800);
+    }
   };
 
   const copyToClipboard = () => {
@@ -129,6 +251,9 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     setFile(null);
     setPassword('');
     setHasPassword(false);
+    setAllowedIp('');
+    setNotificationEmail('');
+    setIsDirect(false);
     setResultLink('');
     setUploadProgress(0);
     setStatusText('');
@@ -138,7 +263,6 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     <div className="glass-panel">
       {!resultLink ? (
         <div className="app-container" style={{ gap: '20px' }}>
-          {/* Drag and Drop Zone */}
           <div 
             onDragEnter={handleDrag}
             onDragOver={handleDrag}
@@ -191,9 +315,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             )}
           </div>
 
-          {/* Secure Parameters Drawers */}
           <div className="form-grid">
-            {/* Expiry Selector */}
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
               <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
                 <span>Link Expiration</span>
@@ -222,7 +344,6 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               </div>
             </div>
 
-            {/* Password Locks */}
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
               <div className="form-group-row" style={{ marginBottom: '8px' }}>
                 <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Password Protection</span>
@@ -249,24 +370,72 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             </div>
           </div>
 
-          {/* Burn on Read Toggle */}
-          <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-            <div className="form-group-row">
-              <div style={{ textAlign: 'left' }}>
-                <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Enable One-Time Download</span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after first download.</span>
+          <div className="form-grid">
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                <span>Allowed Receiver IP (Optional)</span>
               </div>
               <input 
-                type="checkbox"
-                checked={burnOnRead}
-                onChange={(e) => setBurnOnRead(e.target.checked)}
-                className="cursor-pointer"
+                type="text"
+                placeholder="e.g. 192.168.1.100"
+                value={allowedIp}
+                onChange={(e) => setAllowedIp(e.target.value)}
+                className="cyber-input"
+                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                disabled={uploading}
+              />
+            </div>
+
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                <span>Email Alerts (Optional)</span>
+              </div>
+              <input 
+                type="email"
+                placeholder="e.g. alerts@domain.com"
+                value={notificationEmail}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+                className="cyber-input"
+                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                 disabled={uploading}
               />
             </div>
           </div>
 
-          {/* Ingestion Execute */}
+          <div className="form-grid">
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-row">
+                <div style={{ textAlign: 'left' }}>
+                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Enable One-Time Download</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after download.</span>
+                </div>
+                <input 
+                  type="checkbox"
+                  checked={burnOnRead}
+                  onChange={(e) => setBurnOnRead(e.target.checked)}
+                  className="cursor-pointer"
+                  disabled={uploading}
+                />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-row">
+                <div style={{ textAlign: 'left' }}>
+                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Direct Cloud Upload (Signed PUT)</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Encrypt locally, upload direct (bypasses server).</span>
+                </div>
+                <input 
+                  type="checkbox"
+                  checked={isDirect}
+                  onChange={(e) => setIsDirect(e.target.checked)}
+                  className="cursor-pointer"
+                  disabled={uploading}
+                />
+              </div>
+            </div>
+          </div>
+
           <button 
             disabled={!file || uploading}
             onClick={triggerUpload}
@@ -285,7 +454,6 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           </button>
         </div>
       ) : (
-        /* Result Screen */
         <div className="app-container">
           <div className="app-container" style={{ gap: '8px' }}>
             <div className="header-badge" style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}>

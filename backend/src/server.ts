@@ -77,7 +77,7 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('[DATABASE] Connected to DB successfully.');
     
-    await sequelize.sync({ force: false });
+    await sequelize.sync({ alter: true });
     console.log('[DATABASE] Synced database models.');
 
     initCleanupJob();

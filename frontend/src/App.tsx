@@ -104,7 +104,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Purge Overlay */}
       {isPurging && (
         <div className="purge-overlay">
           <AlertOctagon className="purge-icon animate-pulse" />
@@ -112,41 +111,26 @@ export default function App() {
           <p className="purge-subtitle">Permanently shredding keys and deleting active files from server volumes…</p>
         </div>
       )}
-
-      {/* Main Header */}
-      <header className="main-header">
-        <div className="header-logo-container" onClick={navigateToDashboard}>
-          <div className="logo-icon-wrapper">
-            <svg className="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="brand-title">SecuLink</h1>
-            <span className="brand-subtitle">Zero-Knowledge Encrypted Vault</span>
-          </div>
+      <div className="floating-controls-widget">
+        <div className="status-badge" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+          <span className="status-indicator"></span>
+          <span className="status-text-label">Vault Active</span>
         </div>
-        
-        <div className="header-actions">
-          <div className="status-badge">
-            <span className="status-indicator"></span>
-            <span>Vault Status: Active</span>
-          </div>
-          <span className="divider">|</span>
-          <button
-            className="btn-theme-toggle"
-            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
-          </button>
-        </div>
-      </header>
+        <button
+          className="btn-theme-toggle"
+          onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        >
+          {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
+        </button>
+      </div>
 
-      {/* Header Title & How it works instructions */}
-      <div style={{ textAlign: 'center', marginTop: '24px', marginBottom: '24px' }}>
-        
+      <div className="brand-header-section">
+        <h1 className="brand-logo-text" onClick={navigateToDashboard}>SecuLink</h1>
+        <p className="brand-logo-subtitle">Zero-Knowledge Encrypted Ephemeral Vault</p>
+      </div>
+
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
         {view === 'dashboard' && (
           <div className="instructions-container">
             <h2 className="instructions-title">How does it work?</h2>
@@ -191,7 +175,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Navigation Tabs */}
       {view === 'dashboard' && (
         <nav className="navbar">
           <div className="nav-tabs-wrapper">
@@ -217,7 +200,6 @@ export default function App() {
         </nav>
       )}
 
-      {/* Main Content */}
       <main className="main-content">
         {view === 'dashboard' ? (
           <>

@@ -11,7 +11,6 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
   const scannedAt = new Date();
   
   try {
-    // Try to run dynamic ClamAV scan if clamscan is installed and daemon is online
     try {
       require.resolve('clamscan');
       const ClamScan = require('clamscan');
@@ -21,7 +20,7 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
         clamdscan: {
           host: process.env.CLAMAV_HOST || 'localhost',
           port: parseInt(process.env.CLAMAV_PORT || '3310', 10),
-          timeout: 2000 // 2 second timeout to fail fast if offline
+          timeout: 2000
         }
       });
       
@@ -43,17 +42,11 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
         scannedAt
       };
     } catch (e: any) {
-      // clamscan module not present or connection failed
       console.log(`[ANTIVIRUS] ClamAV daemon offline or clamscan not loaded. Falling back to local scanner heuristics.`);
     }
     
     console.log(`[ANTIVIRUS] Scanning file: ${fileName} (${(fileBuffer.length / 1024).toFixed(1)} KB)...`);
     
-    // Heuristic Scan Fallback:
-    // We check for signature bytes of executable files (like PE format, ELF, or bat patterns)
-    // as malware uploads are commonly hidden in fake extensions.
-    
-    // PE Executable check: MZ header in hex is '4d 5a'
     if (fileBuffer.length > 2 && fileBuffer[0] === 0x4D && fileBuffer[1] === 0x5A) {
       console.warn(`[SECURITY WARNING] Blocked file ${fileName} - Executable PE signature (MZ) detected in upload stream.`);
       return {
@@ -63,7 +56,6 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
       };
     }
 
-    // ELF Executable check: hex is '7f 45 4c 46' (.ELF)
     if (fileBuffer.length > 4 && 
         fileBuffer[0] === 0x7F && 
         fileBuffer[1] === 0x45 && 
@@ -77,8 +69,6 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
       };
     }
 
-    // ZIP archives: check if they contain executable files inside them
-    // ZIP header signature is '50 4b 03 04'
     const isZip = fileBuffer.length > 4 && 
                   fileBuffer[0] === 0x50 && 
                   fileBuffer[1] === 0x4B && 
@@ -87,7 +77,6 @@ export async function scanFileBuffer(fileBuffer: Buffer, fileName: string): Prom
                   
     if (isZip) {
       const zipString = fileBuffer.toString('binary');
-      // Look for signatures of dangerous extensions inside the zip file structure
       const dangerousExtensions = ['.exe', '.sh', '.bat', '.dmg', '.pkg', '.scr'];
       for (const ext of dangerousExtensions) {
         if (zipString.includes(ext)) {

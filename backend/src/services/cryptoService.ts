@@ -31,6 +31,14 @@ export function encryptFile(fileBuffer: Buffer) {
   };
 }
 
+export function encryptFileKey(fileKey: Buffer): string {
+  const masterKey = getMasterKey();
+  const keyIv = crypto.randomBytes(16); 
+  const keyCipher = crypto.createCipheriv('aes-256-cbc', masterKey, keyIv);
+  const encryptedFileKey = Buffer.concat([keyCipher.update(fileKey), keyCipher.final()]);
+  return Buffer.concat([keyIv, encryptedFileKey]).toString('hex');
+}
+
 export function decryptFile(
   ciphertext: Buffer,
   envelopeHex: string,
