@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Shield, Clock, Flame, Key, Link as LinkIcon, Check, Copy } from 'lucide-react';
+import { Upload, Shield, Link as LinkIcon, Check, Copy } from 'lucide-react';
 import type { ConsoleLogEntry } from './ConsolePanel';
 
 
@@ -136,13 +136,8 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
   return (
     <div className="glass-panel">
-      <div className="form-group-row" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-        <Shield className="w-5 h-5 text-indigo-600" />
-        <h2 className="form-group-title" style={{ fontSize: '15px', color: '#1e293b' }}>Upload Secure File</h2>
-      </div>
-
       {!resultLink ? (
-        <div className="app-container">
+        <div className="app-container" style={{ gap: '20px' }}>
           {/* Drag and Drop Zone */}
           <div 
             onDragEnter={handleDrag}
@@ -151,6 +146,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={`dropzone ${isDragActive ? 'drag-active' : ''}`}
+            style={{ minHeight: '180px' }}
           >
             <input 
               ref={fileInputRef}
@@ -159,7 +155,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               className="input-hidden"
             />
             {uploading ? (
-              <div className="app-container" style={{ gap: '16px' }}>
+              <div className="app-container" style={{ gap: '16px', alignItems: 'center' }}>
                 <svg className="w-12 h-12 animate-spin text-indigo-600" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="50 150" opacity="0.2" />
                   <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="100 100" />
@@ -172,10 +168,10 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                 </div>
               </div>
             ) : file ? (
-              <div className="app-container" style={{ gap: '8px' }}>
-                <Shield className="w-10 h-10 text-indigo-600" />
-                <div className="text-sm font-bold text-slate-800 max-w-[250px] truncate">{file.name}</div>
-                <div className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} KB</div>
+              <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
+                <Shield className="w-10 h-10 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
+                <div className="text-sm font-bold text-slate-800 max-w-[250px] truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</div>
+                <div className="text-xs text-slate-500" style={{ color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(1)} KB</div>
                 <button 
                   onClick={(e) => { e.stopPropagation(); setFile(null); }}
                   className="text-xs cursor-pointer text-red-500 hover:text-red-700"
@@ -185,11 +181,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                 </button>
               </div>
             ) : (
-              <div className="app-container" style={{ gap: '12px' }}>
-                <Upload className="w-10 h-10 text-slate-400" />
+              <div className="app-container" style={{ gap: '12px', alignItems: 'center' }}>
+                <Upload className="w-12 h-12 text-slate-400" style={{ color: 'var(--text-muted)' }} />
                 <div>
-                  <p className="text-sm font-semibold text-slate-700">Drag & drop document here, or click to browse</p>
-                  <p className="text-xs text-slate-400 mt-1">PDF, ZIP, PNG, JPG, TXT (Max 50MB)</p>
+                  <p className="text-sm font-semibold text-slate-700" style={{ color: 'var(--text-primary)' }}>Drag & drop document here, or click to browse</p>
+                  <p className="text-xs text-slate-400 mt-1" style={{ color: 'var(--text-muted)' }}>PDF, ZIP, PNG, JPG, TXT (Max 50MB)</p>
                 </div>
               </div>
             )}
@@ -198,12 +194,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           {/* Secure Parameters Drawers */}
           <div className="form-grid">
             {/* Expiry Selector */}
-            <div className="form-group">
-              <div className="form-group-title">
-                <Clock className="w-4 h-4 text-slate-400" />
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
                 <span>Link Expiration</span>
               </div>
-              <div className="form-group-row">
+              <div className="form-group-row" style={{ gap: '10px' }}>
                 <input 
                   type="number" 
                   min="1"
@@ -211,67 +206,55 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                   value={expireValue}
                   onChange={(e) => setExpireValue(Math.max(1, parseInt(e.target.value) || 1))}
                   className="cyber-input"
-                  style={{ width: '70px' }}
+                  style={{ width: '80px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   disabled={uploading}
                 />
                 <select 
                   value={expireUnit}
                   onChange={(e) => setExpireUnit(e.target.value)}
                   className="cyber-select"
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   disabled={uploading}
                 >
                   <option value="minutes">Minutes</option>
                   <option value="hours">Hours</option>
                 </select>
               </div>
-              <div className="text-xxs text-slate-400">
-                Lease duration cannot exceed 24 hours.
-              </div>
             </div>
 
             {/* Password Locks */}
-            <div className="form-group">
-              <div className="form-group-row">
-                <div className="form-group-title">
-                  <Key className="w-4 h-4 text-slate-400" />
-                  <span>Password Protection</span>
-                </div>
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-row" style={{ marginBottom: '8px' }}>
+                <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Password Protection</span>
                 <input 
                   type="checkbox"
                   checked={hasPassword}
-                  onChange={(e) => setHasPassword(e.target.checked)}
+                  onChange={(e) => {
+                    setHasPassword(e.target.checked);
+                    if (!e.target.checked) setPassword('');
+                  }}
                   className="cursor-pointer"
                   disabled={uploading}
                 />
               </div>
-              {hasPassword ? (
-                <input 
-                  type="password"
-                  placeholder="Set Access Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="cyber-input"
-                  style={{ width: '100%' }}
-                  disabled={uploading}
-                />
-              ) : (
-                <div className="text-xxs text-slate-400 leading-normal">
-                  No password required configuration.
-                </div>
-              )}
+              <input 
+                type="password"
+                placeholder={hasPassword ? "Enter Password" : ""}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="cyber-input"
+                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                disabled={!hasPassword || uploading}
+              />
             </div>
           </div>
 
           {/* Burn on Read Toggle */}
-          <div className="form-group" style={{ padding: '12px' }}>
+          <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
             <div className="form-group-row">
-              <div className="form-group-title" style={{ justifyContent: 'flex-start', flex: 1 }}>
-                <Flame className="w-5 h-5 text-slate-500" />
-                <div style={{ textAlign: 'left', marginLeft: '8px' }}>
-                  <span className="text-xs font-semibold block text-slate-700">One-Time Download</span>
-                  <span className="text-xxs text-slate-400 block">Link automatically deletes after first download.</span>
-                </div>
+              <div style={{ textAlign: 'left' }}>
+                <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Enable One-Time Download</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after first download.</span>
               </div>
               <input 
                 type="checkbox"
@@ -288,8 +271,17 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             disabled={!file || uploading}
             onClick={triggerUpload}
             className="btn-cyber"
+            style={{
+              alignSelf: 'center',
+              width: 'auto',
+              minWidth: '180px',
+              padding: '12px 32px',
+              borderRadius: '24px',
+              fontSize: '15px',
+              marginTop: '8px'
+            }}
           >
-            Generate Secure Link
+            Generate Link
           </button>
         </div>
       ) : (

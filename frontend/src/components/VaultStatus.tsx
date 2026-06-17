@@ -108,20 +108,19 @@ export const VaultStatus: React.FC<VaultStatusProps> = ({ links, onRemoveLink, o
 
   return (
     <div className="glass-panel">
-      <div className="flex flex-col items-center justify-center space-y-2 border-b border-[#e2e8f0] pb-4 w-full text-center">
-        <History className="text-slate-400 w-5 h-5 mx-auto" />
-        <h2 className="brand-title" style={{ fontSize: '16px', textAlign: 'center' }}>Active File Shares</h2>
-        {links.length > 0 && (
+      {links.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', marginBottom: '16px' }}>
           <button 
             disabled={purging}
             onClick={handlePurgeClick}
-            className="flex items-center justify-center space-x-1.5 text-xs border border-red-200 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded transition text-red-600 cursor-pointer mt-2 mx-auto bg-white font-medium shadow-sm"
+            className="flex items-center justify-center space-x-1.5 text-xs border border-red-200 hover:bg-red-50 hover:text-red-700 px-3 py-1.5 rounded transition text-red-600 cursor-pointer bg-white font-medium shadow-sm"
+            style={{ border: '1px solid rgba(239, 68, 68, 0.2)', backgroundColor: 'rgba(239, 68, 68, 0.04)' }}
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Purge All Shares</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {links.length === 0 ? (
         <div className="text-center py-8 flex flex-col items-center justify-center space-y-3 w-full">

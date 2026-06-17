@@ -4,7 +4,7 @@ import type { ConsoleLogEntry } from './components/ConsolePanel';
 import { UploadPanel } from './components/UploadPanel';
 import { VaultStatus } from './components/VaultStatus';
 import { DownloadChallenge } from './components/DownloadChallenge';
-import { Terminal, Shield, AlertOctagon, Upload, History, Sun, Moon } from 'lucide-react';
+import { Terminal, AlertOctagon, Sun, Moon } from 'lucide-react';
 
 interface SavedLink {
   uuid: string;
@@ -113,34 +113,40 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="main-header">
-        <div className="header-logo-container" onClick={navigateToDashboard}>
-          <div className="logo-icon-wrapper">
-            <Shield className="logo-icon" />
-          </div>
-          <div>
-            <h1 className="brand-title">SecuLink</h1>
-            <p className="brand-subtitle">Zero-Knowledge Ephemeral File Vault</p>
-          </div>
-        </div>
+      {/* Theme Toggle in top-right */}
+      <button
+        className="btn-theme-toggle"
+        onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100 }}
+      >
+        {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
+      </button>
 
-        <div className="header-actions">
-          <div className="status-badge">
-            <span className="status-indicator" />
-            <span>Protocol Active</span>
-            <span className="divider">|</span>
-            <span>Node Online</span>
+      {/* Header Title & How it works instructions */}
+      <div style={{ textAlign: 'center', marginTop: '40px', marginBottom: '24px' }}>
+        <h1 style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px', letterSpacing: '-0.025em' }}>SecuLink</h1>
+        
+        {view === 'dashboard' && (
+          <div className="instructions-container">
+            <h2 className="instructions-title">How does it work?</h2>
+            <div className="instructions-steps">
+              <div className="step-item">
+                <div className="step-number">1</div>
+                <div className="step-text"><strong>Upload</strong> your file (max 50MB)</div>
+              </div>
+              <div className="step-item">
+                <div className="step-number">2</div>
+                <div className="step-text"><strong>Configure</strong> expiry or password</div>
+              </div>
+              <div className="step-item">
+                <div className="step-number">3</div>
+                <div className="step-text"><strong>Share</strong> link (auto-deletes)</div>
+              </div>
+            </div>
           </div>
-          <button
-            className="btn-theme-toggle"
-            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
-          </button>
-        </div>
-      </header>
+        )}
+      </div>
 
       {/* Navigation Tabs */}
       {view === 'dashboard' && (
@@ -150,28 +156,19 @@ export default function App() {
               className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
               onClick={() => setActiveTab('upload')}
             >
-              <Upload className="nav-icon" />
               <span>Upload File</span>
             </button>
             <button
               className={`nav-tab ${activeTab === 'shares' ? 'active' : ''}`}
               onClick={() => setActiveTab('shares')}
             >
-              <History className="nav-icon" />
               <span>Active Shares</span>
-              {links.length > 0 && (
-                <span className="badge-count">{links.length}</span>
-              )}
             </button>
             <button
               className={`nav-tab ${activeTab === 'logs' ? 'active' : ''}`}
               onClick={() => setActiveTab('logs')}
             >
-              <Terminal className="nav-icon" />
               <span>Activity Log</span>
-              {logs.length > 0 && (
-                <span className="badge-count">{logs.length}</span>
-              )}
             </button>
           </div>
         </nav>
