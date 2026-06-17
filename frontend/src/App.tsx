@@ -124,24 +124,47 @@ export default function App() {
       </button>
 
       {/* Header Title & How it works instructions */}
-      <div style={{ textAlign: 'center', marginTop: '40px', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px', letterSpacing: '-0.025em' }}>SecuLink</h1>
+      <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '24px' }}>
+        <h1 style={{ fontSize: '3.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '36px', letterSpacing: '-0.025em' }}>SecuLink</h1>
         
         {view === 'dashboard' && (
           <div className="instructions-container">
             <h2 className="instructions-title">How does it work?</h2>
-            <div className="instructions-steps">
-              <div className="step-item">
-                <div className="step-number">1</div>
-                <div className="step-text"><strong>Upload</strong> your file (max 50MB)</div>
+            <div className="instructions-list">
+              <div className="instruction-item">
+                <span className="step-num">1</span>
+                <div className="step-content">
+                  <h3 className="step-title">Upload Your File</h3>
+                  <p className="step-desc">Add the file you want to share securely.</p>
+                </div>
               </div>
-              <div className="step-item">
-                <div className="step-number">2</div>
-                <div className="step-text"><strong>Configure</strong> expiry or password</div>
+              <div className="instruction-item">
+                <span className="step-num">2</span>
+                <div className="step-content">
+                  <h3 className="step-title">Set Protection Options</h3>
+                  <p className="step-desc">Choose an expiry time, add a password, or enable a one-time download for extra security.</p>
+                </div>
               </div>
-              <div className="step-item">
-                <div className="step-number">3</div>
-                <div className="step-text"><strong>Share</strong> link (auto-deletes)</div>
+              <div className="instruction-item">
+                <span className="step-num">3</span>
+                <div className="step-content">
+                  <h3 className="step-title">Share the Link</h3>
+                  <p className="step-desc">Send the secure link to anyone you want to access the file.</p>
+                </div>
+              </div>
+              <div className="instruction-item">
+                <span className="step-num">4</span>
+                <div className="step-content">
+                  <h3 className="step-title">Recipient Downloads</h3>
+                  <p className="step-desc">The recipient opens the link and enters the password (if required).</p>
+                </div>
+              </div>
+              <div className="instruction-item">
+                <span className="step-num">5</span>
+                <div className="step-content">
+                  <h3 className="step-title">Auto-Delete</h3>
+                  <p className="step-desc">The file automatically disappears once it expires or reaches its download limit.</p>
+                </div>
               </div>
             </div>
           </div>

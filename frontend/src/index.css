@@ -5,9 +5,9 @@
    Accent: #F77743 coral-orange
    =========================== */
 :root {
-  --bg-primary:       #f4f5f7;
+  --bg-primary:       #ffffff;
   --bg-secondary:     #ffffff;
-  --bg-tertiary:      #f0f0f3;
+  --bg-tertiary:      #f8fafc;
   --bg-card:          #ffffff;
 
   --color-accent:       #F77743;
@@ -139,8 +139,8 @@ body {
 
 #root {
   width: 100%;
-  max-width: 780px;
-  padding: 0 20px;
+  max-width: 900px;
+  padding: 0 24px;
   display: flex;
   flex-direction: column;
 }
@@ -1153,7 +1153,6 @@ input[type="checkbox"]:checked::after {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
   margin: 12px auto 28px auto;
   width: 100%;
   max-width: 680px;
@@ -1161,31 +1160,29 @@ input[type="checkbox"]:checked::after {
 }
 
 .instructions-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   opacity: 0.85;
+  margin-bottom: 20px;
 }
 
-.instructions-steps {
+.instructions-list {
   display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 24px;
+  flex-direction: column;
+  gap: 16px;
   width: 100%;
 }
 
-.step-item {
+.instruction-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13.5px;
-  color: var(--text-secondary);
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.step-number {
+.step-num {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1196,12 +1193,46 @@ input[type="checkbox"]:checked::after {
   color: var(--color-accent);
   font-weight: 750;
   font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
-.step-text {
+.step-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   text-align: left;
 }
 
-.step-text strong {
+.step-title {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
+}
+
+.step-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 3px 0 0 0;
+  line-height: 1.4;
+}
+
+@media (max-width: 600px) {
+  #root {
+    padding: 0 12px;
+  }
+  .main-content {
+    padding: 16px 8px;
+  }
+  .instructions-list {
+    padding: 0;
+  }
+  .instructions-container {
+    margin-bottom: 20px;
+  }
+  .btn-theme-toggle {
+    top: 16px;
+    right: 16px;
+  }
 }
