@@ -54,7 +54,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({ logs, onClear }) => 
       <div className="terminal-screen">
         <div className="terminal-logs-wrapper">
           {logs.map((log, index) => (
-            <div key={index} className="terminal-row">
+            <div key={index} className="terminal-row" style={{ borderLeftColor: getLogColorVar(log.type) }}>
               <div className="terminal-row-content">
                 <span className="terminal-time">[{log.timestamp}]</span>
                 <span style={{ color: getLogColorVar(log.type) }} className="terminal-prefix">

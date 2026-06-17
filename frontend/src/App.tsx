@@ -113,19 +113,39 @@ export default function App() {
         </div>
       )}
 
-      {/* Theme Toggle in top-right */}
-      <button
-        className="btn-theme-toggle"
-        onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100 }}
-      >
-        {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
-      </button>
+      {/* Main Header */}
+      <header className="main-header">
+        <div className="header-logo-container" onClick={navigateToDashboard}>
+          <div className="logo-icon-wrapper">
+            <svg className="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="brand-title">SecuLink</h1>
+            <span className="brand-subtitle">Zero-Knowledge Encrypted Vault</span>
+          </div>
+        </div>
+        
+        <div className="header-actions">
+          <div className="status-badge">
+            <span className="status-indicator"></span>
+            <span>Vault Status: Active</span>
+          </div>
+          <span className="divider">|</span>
+          <button
+            className="btn-theme-toggle"
+            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          >
+            {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
+          </button>
+        </div>
+      </header>
 
       {/* Header Title & How it works instructions */}
-      <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '3.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '54px', letterSpacing: '-0.025em' }}>SecuLink</h1>
+      <div style={{ textAlign: 'center', marginTop: '24px', marginBottom: '24px' }}>
         
         {view === 'dashboard' && (
           <div className="instructions-container">
