@@ -1,12 +1,23 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
-import bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
 import path from 'path';
-import { File, AuditLog } from '../models';
 import { encryptFile, decryptFile } from '../services/cryptoService';
-import { shredFile, UPLOADS_DIR } from '../services/cleanupService';
+import { shredFile } from '../services/cleanupService';
+import { scanFileBuffer } from '../services/virusScanService';
+import { 
+  createFileRecord, 
+  getFileRecord, 
+  incrementDownloadCount, 
+  writeAuditLog, 
+  getAuditLogs, 
+  getAllActiveFiles 
+} from '../services/databaseService';
+import { 
+  uploadEncryptedFile, 
+  downloadEncryptedFile 
+} from '../services/storageService';
 
 const router = Router();
 const upload = multer({
@@ -14,9 +25,9 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, 
 });
 
-async function checkExpiration(file: File, ip: string): Promise<boolean> {
+async function checkExpiration(file: any, ip: string): Promise<boolean> {
   if (file.isDeleted) return true;
-  if (new Date() > file.expiresAt) {
+  if (new Date() > new Date(file.expiresAt)) {
     await shredFile(file, 'ON_DEMAND_CHECK', 'File accessed after expiration; shredded on access.');
     return true;
   }
@@ -33,6 +44,14 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const originalName = req.file.originalname;
     const mimeType = req.file.mimetype;
     const fileSize = req.file.size;
+
+    // 1. Antivirus / Heuristics Check (ClamAV fallback)
+    const scan = await scanFileBuffer(fileBuffer, originalName);
+    if (scan.isInfected) {
+      return res.status(400).json({ 
+        error: `Security scan rejected file: malware signature detected (${scan.virusName}).` 
+      });
+    }
 
     const allowedExtensions = ['.pdf', '.zip', '.jpg', '.jpeg', '.png', '.txt', '.json', '.docx', '.xlsx', '.md'];
     const fileExt = path.extname(originalName).toLowerCase();
@@ -61,21 +80,20 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       expiresAt = maxExpiry;
     }
 
+    // 2. Argon2 Hashing
     let passwordHash: string | null = null;
     if (password && password.trim() !== '') {
-      passwordHash = await bcrypt.hash(password, 10);
+      passwordHash = await argon2.hash(password);
     }
+
     const encryption = encryptFile(fileBuffer);
-
     const fileHash = uuidv4();
-    const filePath = path.join(UPLOADS_DIR, fileHash);
     
-    if (!fs.existsSync(UPLOADS_DIR)) {
-      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    }
-    fs.writeFileSync(filePath, encryption.ciphertext);
+    // 3. Storage Upload (Firebase/Local)
+    await uploadEncryptedFile(fileHash, encryption.ciphertext);
 
-    const fileRecord = await File.create({
+    // 4. DB Record Creation (Firestore/Sequelize)
+    const fileRecord = await createFileRecord({
       fileName: originalName,
       fileHash: fileHash,
       passwordHash: passwordHash,
@@ -89,7 +107,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     });
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    await AuditLog.create({
+    await writeAuditLog({
       fileId: fileRecord.id,
       action: 'CREATED',
       ipAddress: ip,
@@ -110,7 +128,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 router.get('/challenge/:uuid', async (req: Request, res: Response): Promise<any> => {
   try {
     const { uuid } = req.params;
-    const file = await File.findByPk(uuid);
+    const file = await getFileRecord(uuid);
 
     if (!file) {
       return res.status(404).json({ error: 'Link not found or expired.' });
@@ -141,7 +159,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
   try {
     const { uuid } = req.params;
     const { password } = req.body;
-    const file = await File.findByPk(uuid);
+    const file = await getFileRecord(uuid);
 
     if (!file) {
       return res.status(404).json({ error: 'Link not found or expired.' });
@@ -155,7 +173,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
 
     if (file.passwordHash) {
       if (!password) {
-        await AuditLog.create({
+        await writeAuditLog({
           fileId: file.id,
           action: 'DOWNLOAD_FAIL',
           ipAddress: ip,
@@ -164,9 +182,10 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
         return res.status(401).json({ error: 'Password required.' });
       }
 
-      const match = await bcrypt.compare(password, file.passwordHash);
+      // Argon2 password verification
+      const match = await argon2.verify(file.passwordHash, password);
       if (!match) {
-        await AuditLog.create({
+        await writeAuditLog({
           fileId: file.id,
           action: 'DOWNLOAD_FAIL',
           ipAddress: ip,
@@ -176,18 +195,19 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
       }
     }
 
-    const filePath = path.join(UPLOADS_DIR, file.fileHash);
-    if (!fs.existsSync(filePath)) {
-      await AuditLog.create({
+    // Download ciphertext from active storage
+    let ciphertext: Buffer;
+    try {
+      ciphertext = await downloadEncryptedFile(file.fileHash);
+    } catch (err) {
+      await writeAuditLog({
         fileId: file.id,
         action: 'DOWNLOAD_FAIL',
         ipAddress: ip,
-        details: 'Failed download: Encryption payload missing on server.',
+        details: 'Failed download: File payload missing in storage.',
       });
       return res.status(500).json({ error: 'Encrypted file chunk missing from storage.' });
     }
-
-    const ciphertext = fs.readFileSync(filePath);
 
     const decrypted = decryptFile(
       ciphertext,
@@ -196,22 +216,23 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
       file.authTag
     );
 
-    await AuditLog.create({
+    await writeAuditLog({
       fileId: file.id,
       action: 'DOWNLOAD_SUCCESS',
       ipAddress: ip,
       details: 'File downloaded successfully.',
     });
 
-    file.downloadCount += 1;
-    await file.save();
+    await incrementDownloadCount(file.id);
 
     res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
     res.setHeader('Content-Type', file.mimeType);
     res.setHeader('Content-Length', decrypted.length);
     res.send(decrypted);
 
-    if (file.maxDownloads && file.downloadCount >= file.maxDownloads) {
+    // Burn on read check
+    const nextCount = file.downloadCount + 1;
+    if (file.maxDownloads && nextCount >= file.maxDownloads) {
       setTimeout(async () => {
         await shredFile(file, 'BURN_ON_READ', 'File shredded automatically after first download.');
       }, 1000);
@@ -225,11 +246,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
 router.get('/logs/:uuid', async (req: Request, res: Response): Promise<any> => {
   try {
     const { uuid } = req.params;
-    
-    const logs = await AuditLog.findAll({
-      where: { fileId: uuid },
-      order: [['createdAt', 'ASC']],
-    });
+    const logs = await getAuditLogs(uuid);
 
     if (logs.length === 0) {
       return res.status(404).json({ error: 'Audit history not found.' });
@@ -244,9 +261,7 @@ router.get('/logs/:uuid', async (req: Request, res: Response): Promise<any> => {
 
 router.post('/nuke', async (req: Request, res: Response): Promise<any> => {
   try {
-    const activeFiles = await File.findAll({
-      where: { isDeleted: false }
-    });
+    const activeFiles = await getAllActiveFiles();
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
     console.log(`[NUKE] Wipe initiated by IP ${ip}. Shredding ${activeFiles.length} items.`);
@@ -255,17 +270,7 @@ router.post('/nuke', async (req: Request, res: Response): Promise<any> => {
       await shredFile(file, ip, 'SYSTEM NUKE: All files shredded immediately.');
     }
 
-    if (fs.existsSync(UPLOADS_DIR)) {
-      const files = fs.readdirSync(UPLOADS_DIR);
-      for (const file of files) {
-        const filePath = path.join(UPLOADS_DIR, file);
-        if (fs.statSync(filePath).isFile()) {
-          fs.unlinkSync(filePath);
-        }
-      }
-    }
-
-    return res.json({ success: true, message: `System wiped. ${activeFiles.length} file streams shredded.` });
+    return res.json({ success: true, message: `System wiped. ${activeFiles.length} file shares shredded.` });
   } catch (error) {
     console.error('[NUKE] Error:', error);
     return res.status(500).json({ error: 'Nuke execution failed.' });
