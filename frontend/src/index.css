@@ -1152,7 +1152,7 @@ input[type="checkbox"]:checked::after {
 .instructions-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   margin: 12px auto 28px auto;
   width: 100%;
   max-width: 680px;
@@ -1160,19 +1160,19 @@ input[type="checkbox"]:checked::after {
 }
 
 .instructions-title {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   opacity: 0.85;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .instructions-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   width: 100%;
 }
 
@@ -1186,15 +1186,15 @@ input[type="checkbox"]:checked::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background-color: var(--color-accent-soft);
   color: var(--color-accent);
   font-weight: 750;
-  font-size: 11px;
+  font-size: 13px;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .step-content {
@@ -1205,17 +1205,17 @@ input[type="checkbox"]:checked::after {
 }
 
 .step-title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
 .step-desc {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--text-secondary);
-  margin: 3px 0 0 0;
-  line-height: 1.4;
+  margin: 4px 0 0 0;
+  line-height: 1.45;
 }
 
 @media (max-width: 600px) {

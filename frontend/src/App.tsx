@@ -125,7 +125,7 @@ export default function App() {
 
       {/* Header Title & How it works instructions */}
       <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '3.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '36px', letterSpacing: '-0.025em' }}>SecuLink</h1>
+        <h1 style={{ fontSize: '3.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '54px', letterSpacing: '-0.025em' }}>SecuLink</h1>
         
         {view === 'dashboard' && (
           <div className="instructions-container">
