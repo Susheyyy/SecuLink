@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Shield, Link as LinkIcon, Check, Copy } from 'lucide-react';
+import { Upload, Shield, Link as LinkIcon, Check, Copy, MessageSquare, FileText, Globe, Clock } from 'lucide-react';
 import type { ConsoleLogEntry } from './ConsolePanel';
-
+import { encryptInWorker } from '../utils/cryptoWorker';
 
 interface UploadPanelProps {
   addLog: (type: ConsoleLogEntry['type'], message: string) => void;
@@ -24,6 +24,12 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
   const [allowedIp, setAllowedIp] = useState('');
   const [notificationEmail, setNotificationEmail] = useState('');
   const [isDirect, setIsDirect] = useState(false);
+
+  const [shareType, setShareType] = useState('file');
+  const [noteText, setNoteText] = useState('');
+  const [allowedCountries, setAllowedCountries] = useState('');
+  const [accessWindowStart, setAccessWindowStart] = useState('');
+  const [accessWindowEnd, setAccessWindowEnd] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -56,48 +62,64 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
   };
 
   const triggerUpload = async () => {
-    if (!file) return;
+    let fileBuffer: ArrayBuffer;
+    let fileName = '';
+    let mimeType = '';
+    let fileSize = 0;
+
+    if (shareType === 'note') {
+      if (!noteText.trim()) {
+        alert('Please enter a note to share.');
+        return;
+      }
+      const noteBytes = new TextEncoder().encode(noteText);
+      fileBuffer = noteBytes.buffer;
+      fileName = 'note.txt';
+      mimeType = 'text/plain';
+      fileSize = noteBytes.length;
+    } else if (shareType === 'chat') {
+      const dummyBytes = new Uint8Array(0);
+      fileBuffer = dummyBytes.buffer;
+      fileName = 'chat_room.json';
+      mimeType = 'application/json';
+      fileSize = 0;
+    } else {
+      if (!file) {
+        alert('Please select a file first.');
+        return;
+      }
+      fileBuffer = await file.arrayBuffer();
+      fileName = file.name;
+      mimeType = file.type || 'application/octet-stream';
+      fileSize = file.size;
+    }
 
     setUploading(true);
     setUploadProgress(10);
 
-    if (isDirect) {
-      setStatusText('Encrypting file in browser (AES-256-GCM)...');
-      addLog('info', `[CRYPTO] Direct Upload selected. Encrypting locally before network transit.`);
+    try {
+      setStatusText('Offloading encryption to background Web Worker...');
+      addLog('info', `[CRYPTO] Web Worker spawned. Deriving keys and generating AES ciphertext...`);
       
-      try {
-        const key = await window.crypto.subtle.generateKey(
-          { name: 'AES-GCM', length: 256 },
-          true,
-          ['encrypt', 'decrypt']
-        );
-        const rawKey = await window.crypto.subtle.exportKey('raw', key);
-        const keyHex = Array.from(new Uint8Array(rawKey))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
+      const salt = Array.from(window.crypto.getRandomValues(new Uint8Array(16)));
+      const iv = Array.from(window.crypto.getRandomValues(new Uint8Array(12)));
+      
+      const encResult = await encryptInWorker(
+        fileBuffer,
+        (hasPassword && password) ? password : undefined,
+        salt,
+        iv
+      );
 
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const ivHex = Array.from(iv)
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
+      setUploadProgress(40);
 
-        const fileBuffer = await file.arrayBuffer();
-        const fullCiphertext = await window.crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv },
-          key,
-          fileBuffer
-        );
+      const saltHex = salt.map(b => b.toString(16).padStart(2, '0')).join('');
+      const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+      const authTagHex = encResult.authTag.map(b => b.toString(16).padStart(2, '0')).join('');
 
-        const fullArray = new Uint8Array(fullCiphertext);
-        const ciphertext = fullArray.slice(0, -16);
-        const authTag = fullArray.slice(-16);
-        const authTagHex = Array.from(authTag)
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-
-        setUploadProgress(40);
+      if (isDirect) {
         setStatusText('Requesting presigned upload URL...');
-        addLog('info', `[NETWORK] Allocating metadata and requesting direct upload credentials...`);
+        addLog('info', `[NETWORK] Requester metadata validation...`);
 
         const randomHash = window.crypto.randomUUID ? window.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
           var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -105,19 +127,24 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         });
 
         const payload = {
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          fileSize: file.size,
+          fileName,
+          mimeType,
+          fileSize,
           expireValue,
           expireUnit,
           burnOnRead,
           password: (hasPassword && password) ? password : '',
           allowedIp: allowedIp.trim() || null,
           notificationEmail: notificationEmail.trim() || null,
-          encryptionKey: keyHex,
+          encryptionKey: encResult.keyHex || '',
           encryptionIv: ivHex,
           authTag: authTagHex,
-          fileHash: randomHash
+          fileHash: randomHash,
+          allowedCountries: allowedCountries.trim() || null,
+          accessWindowStart: accessWindowStart || null,
+          accessWindowEnd: accessWindowEnd || null,
+          shareType,
+          cryptoSalt: saltHex
         };
 
         const response = await fetch('http://localhost:5000/api/vault/signed-upload-url', {
@@ -144,7 +171,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           headers: {
             'Content-Type': 'application/octet-stream'
           },
-          body: ciphertext
+          body: encResult.ciphertext
         });
 
         if (!uploadResponse.ok) {
@@ -156,87 +183,81 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         addLog('success', `[VAULT] Zero-Knowledge Direct upload complete! UUID: ${uploadDetails.uuid}`);
         addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(uploadDetails.expiresAt).toLocaleTimeString()}`);
 
-        const secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${uploadDetails.uuid}`;
+        let secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${uploadDetails.uuid}`;
+        if (!hasPassword && encResult.keyHex) {
+          secureUrl += `#${encResult.keyHex}`;
+        }
         setResultLink(secureUrl);
         
         onUploadSuccess({
           uuid: uploadDetails.uuid,
-          fileName: file.name,
+          fileName,
           expiresAt: uploadDetails.expiresAt,
           burnOnRead: burnOnRead
         });
 
-      } catch (err: any) {
-        console.error(err);
-        setStatusText('Direct upload failed.');
-        addLog('error', `[UPLOAD ERROR] ${err.message || 'Direct upload failure.'}`);
-        setUploadProgress(0);
-      } finally {
-        setUploading(false);
+      } else {
+        setStatusText('Uploading encrypted payload...');
+        addLog('info', `[NETWORK] Transmitting encrypted block to server...`);
+
+        const encryptedBlob = new Blob([encResult.ciphertext], { type: 'application/octet-stream' });
+        const formData = new FormData();
+        formData.append('file', encryptedBlob, fileName);
+        formData.append('isDirectZeroKnowledge', 'true');
+        formData.append('encryptionKey', encResult.keyHex || '');
+        formData.append('encryptionIv', ivHex);
+        formData.append('authTag', authTagHex);
+        formData.append('expireValue', expireValue.toString());
+        formData.append('expireUnit', expireUnit);
+        formData.append('burnOnRead', burnOnRead.toString());
+        formData.append('shareType', shareType);
+        formData.append('cryptoSalt', saltHex);
+        if (allowedIp.trim()) formData.append('allowedIp', allowedIp.trim());
+        if (notificationEmail.trim()) formData.append('notificationEmail', notificationEmail.trim());
+        if (allowedCountries.trim()) formData.append('allowedCountries', allowedCountries.trim());
+        if (accessWindowStart) formData.append('accessWindowStart', accessWindowStart);
+        if (accessWindowEnd) formData.append('accessWindowEnd', accessWindowEnd);
+        if (hasPassword && password) {
+          formData.append('password', password);
+        }
+
+        const response = await fetch('http://localhost:5000/api/vault/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Server rejected file upload.');
+        }
+
+        const result = await response.json();
+        setUploadProgress(100);
+        setStatusText('Secure link generated.');
+        addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(result.expiresAt).toLocaleTimeString()}`);
+        
+        let secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${result.uuid}`;
+        if (!hasPassword && encResult.keyHex) {
+          secureUrl += `#${encResult.keyHex}`;
+        }
+        setResultLink(secureUrl);
+        
+        onUploadSuccess({
+          uuid: result.uuid,
+          fileName,
+          expiresAt: result.expiresAt,
+          burnOnRead: result.burnOnRead
+        });
+
+        addLog('success', `[VAULT] File encrypted and saved. UUID: ${result.uuid}`);
       }
-    } else {
-      setStatusText('Initializing secure upload...');
-      addLog('info', `[UPLOAD] Starting upload for file: ${file.name}`);
-
-      setTimeout(async () => {
-        setUploadProgress(35);
-        setStatusText('Encrypting file in memory (AES-256-GCM)...');
-        addLog('success', `[CRYPTO] Envelope key successfully generated.`);
-        addLog('info', `[CRYPTO] Encrypting stream chunks with authenticated tag validations.`);
-
-        setTimeout(async () => {
-          setUploadProgress(70);
-          setStatusText('Uploading encrypted payload...');
-          addLog('info', `[NETWORK] Transmitting encrypted block to server...`);
-
-          try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('expireValue', expireValue.toString());
-            formData.append('expireUnit', expireUnit);
-            formData.append('burnOnRead', burnOnRead.toString());
-            if (allowedIp.trim()) formData.append('allowedIp', allowedIp.trim());
-            if (notificationEmail.trim()) formData.append('notificationEmail', notificationEmail.trim());
-            if (hasPassword && password) {
-              formData.append('password', password);
-            }
-
-            const response = await fetch('http://localhost:5000/api/vault/upload', {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              const data = await response.json();
-              throw new Error(data.error || 'Server rejected file upload.');
-            }
-
-            const result = await response.json();
-            setUploadProgress(100);
-            setStatusText('Secure link generated.');
-            addLog('success', `[EXPIRY] Link expiration scheduled for: ${new Date(result.expiresAt).toLocaleTimeString()}`);
-            
-            const secureUrl = `${window.location.origin}${window.location.pathname}#/vault/${result.uuid}`;
-            setResultLink(secureUrl);
-            
-            onUploadSuccess({
-              uuid: result.uuid,
-              fileName: file.name,
-              expiresAt: result.expiresAt,
-              burnOnRead: result.burnOnRead
-            });
-
-            addLog('success', `[VAULT] File encrypted and saved. UUID: ${result.uuid}`);
-          } catch (error: any) {
-            console.error(error);
-            setStatusText('Upload failed.');
-            addLog('error', `[UPLOAD ERROR] ${error.message || 'Connection failure.'}`);
-            setUploadProgress(0);
-          } finally {
-            setUploading(false);
-          }
-        }, 800);
-      }, 800);
+    } catch (error: any) {
+      console.error(error);
+      setStatusText('Upload failed.');
+      addLog('error', `[UPLOAD ERROR] ${error.message || 'Connection failure.'}`);
+      setUploadProgress(0);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -257,63 +278,178 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     setResultLink('');
     setUploadProgress(0);
     setStatusText('');
+    setShareType('file');
+    setNoteText('');
+    setAllowedCountries('');
+    setAccessWindowStart('');
+    setAccessWindowEnd('');
   };
 
   return (
     <div className="glass-panel">
       {!resultLink ? (
         <div className="app-container" style={{ gap: '20px' }}>
-          <div 
-            onDragEnter={handleDrag}
-            onDragOver={handleDrag}
-            onDragLeave={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`dropzone ${isDragActive ? 'drag-active' : ''}`}
-            style={{ minHeight: '180px' }}
-          >
-            <input 
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileChange}
-              className="input-hidden"
-            />
-            {uploading ? (
-              <div className="app-container" style={{ gap: '16px', alignItems: 'center' }}>
-                <svg className="w-12 h-12 animate-spin text-indigo-600" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="50 150" opacity="0.2" />
-                  <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="100 100" />
-                </svg>
-                <div>
-                  <div className="text-sm font-semibold text-slate-700">{statusText}</div>
-                  <div className="cyber-input" style={{ width: '200px', height: '8px', marginTop: '10px', padding: '0', overflow: 'hidden', backgroundColor: '#e2e8f0', border: 'none' }}>
-                    <div style={{ backgroundColor: 'var(--color-accent)', height: '100%', width: `${uploadProgress}%`, transition: 'all 0.3s' }}></div>
+
+          <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '10px 14px' }}>
+            <div className="form-group-title" style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', trackingSpace: '0.05em' }}>
+              <span>Share Type</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setShareType('file')}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: shareType === 'file' ? '1.5px solid var(--color-accent)' : '1px solid var(--border-color)',
+                  background: shareType === 'file' ? 'var(--color-accent-soft)' : 'var(--bg-secondary)',
+                  color: shareType === 'file' ? 'var(--color-accent)' : 'var(--text-primary)',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Upload className="w-4 h-4" />
+                <span>Secure File</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareType('note')}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: shareType === 'note' ? '1.5px solid var(--color-accent)' : '1px solid var(--border-color)',
+                  background: shareType === 'note' ? 'var(--color-accent-soft)' : 'var(--bg-secondary)',
+                  color: shareType === 'note' ? 'var(--color-accent)' : 'var(--text-primary)',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Secure Note</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareType('chat')}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: shareType === 'chat' ? '1.5px solid var(--color-accent)' : '1px solid var(--border-color)',
+                  background: shareType === 'chat' ? 'var(--color-accent-soft)' : 'var(--bg-secondary)',
+                  color: shareType === 'chat' ? 'var(--color-accent)' : 'var(--text-primary)',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Secure Chat</span>
+              </button>
+            </div>
+          </div>
+
+          {shareType === 'file' ? (
+            <div 
+              onDragEnter={handleDrag}
+              onDragOver={handleDrag}
+              onDragLeave={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`dropzone ${isDragActive ? 'drag-active' : ''}`}
+              style={{ minHeight: '180px' }}
+            >
+              <input 
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileChange}
+                className="input-hidden"
+              />
+              {uploading ? (
+                <div className="app-container" style={{ gap: '16px', alignItems: 'center' }}>
+                  <svg className="w-12 h-12 animate-spin text-indigo-600" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="50 150" opacity="0.2" />
+                    <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="6" fill="none" strokeDasharray="100 100" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-700">{statusText}</div>
+                    <div className="cyber-input" style={{ width: '200px', height: '8px', marginTop: '10px', padding: '0', overflow: 'hidden', backgroundColor: '#e2e8f0', border: 'none' }}>
+                      <div style={{ backgroundColor: 'var(--color-accent)', height: '100%', width: `${uploadProgress}%`, transition: 'all 0.3s' }}></div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : file ? (
-              <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
-                <Shield className="w-10 h-10 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
-                <div className="text-sm font-bold text-slate-800 max-w-[250px] truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</div>
-                <div className="text-xs text-slate-500" style={{ color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(1)} KB</div>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                  className="text-xs cursor-pointer text-red-500 hover:text-red-700"
-                  style={{ background: 'transparent', border: 'none', textDecoration: 'underline' }}
-                >
-                  Remove File
-                </button>
-              </div>
-            ) : (
-              <div className="app-container" style={{ gap: '12px', alignItems: 'center' }}>
-                <Upload className="w-12 h-12 text-slate-400" style={{ color: 'var(--text-muted)' }} />
-                <div>
-                  <p className="text-sm font-semibold text-slate-700" style={{ color: 'var(--text-primary)' }}>Drag & drop document here, or click to browse</p>
-                  <p className="text-xs text-slate-400 mt-1" style={{ color: 'var(--text-muted)' }}>PDF, ZIP, PNG, JPG, TXT (Max 50MB)</p>
+              ) : file ? (
+                <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
+                  <Shield className="w-10 h-10 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
+                  <div className="text-sm font-bold text-slate-800 max-w-[250px] truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</div>
+                  <div className="text-xs text-slate-500" style={{ color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(1)} KB</div>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                    className="text-xs cursor-pointer text-red-500 hover:text-red-700"
+                    style={{ background: 'transparent', border: 'none', textDecoration: 'underline' }}
+                  >
+                    Remove File
+                  </button>
                 </div>
+              ) : (
+                <div className="app-container" style={{ gap: '12px', alignItems: 'center' }}>
+                  <Upload className="w-12 h-12 text-slate-400" style={{ color: 'var(--text-muted)' }} />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700" style={{ color: 'var(--text-primary)' }}>Drag & drop document here, or click to browse</p>
+                    <p className="text-xs text-slate-400 mt-1" style={{ color: 'var(--text-muted)' }}>PDF, ZIP, PNG, JPG, TXT (Max 50MB)</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : shareType === 'note' ? (
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', textAlign: 'left' }}>
+                <span>Secure Text Note Content</span>
               </div>
-            )}
-          </div>
+              <textarea 
+                placeholder="Type your sensitive note, API keys, or credentials here..." 
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                className="cyber-input"
+                style={{ 
+                  height: '160px', 
+                  fontFamily: "'SFMono-Regular', Consolas, monospace", 
+                  fontSize: '13px', 
+                  background: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border-color)', 
+                  color: 'var(--text-primary)',
+                  resize: 'vertical'
+                }}
+                disabled={uploading}
+              />
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 p-6 rounded-lg text-center flex flex-col items-center gap-2" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
+              <MessageSquare className="w-10 h-10 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
+              <h3 className="text-sm font-bold text-slate-800" style={{ color: 'var(--text-primary)' }}>Create Ephemeral Chat Room</h3>
+              <p className="text-xs text-slate-500 max-w-[280px]" style={{ color: 'var(--text-muted)' }}>
+                This will generate a zero-knowledge encrypted chat link. All messages are encrypted locally before transmission and shredded on expiration.
+              </p>
+            </div>
+          )}
 
           <div className="form-grid">
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
@@ -419,13 +555,57 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               </div>
               <input 
                 type="password"
-                placeholder={hasPassword ? "Enter Password" : ""}
+                placeholder={hasPassword ? "Enter Access Password" : ""}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="cyber-input"
                 style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                 disabled={!hasPassword || uploading}
               />
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Globe className="w-3.5 h-3.5 text-slate-400" />
+                <span>Geofencing Country Block</span>
+              </div>
+              <input 
+                type="text"
+                placeholder="e.g. US, CA, GB (Leave blank for all)"
+                value={allowedCountries}
+                onChange={(e) => setAllowedCountries(e.target.value)}
+                className="cyber-input"
+                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                disabled={uploading}
+              />
+            </div>
+
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Active Download Hours</span>
+              </div>
+              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
+                <input 
+                  type="time"
+                  value={accessWindowStart}
+                  onChange={(e) => setAccessWindowStart(e.target.value)}
+                  className="cyber-input"
+                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
+                  disabled={uploading}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+                <input 
+                  type="time"
+                  value={accessWindowEnd}
+                  onChange={(e) => setAccessWindowEnd(e.target.value)}
+                  className="cyber-input"
+                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
+                  disabled={uploading}
+                />
+              </div>
             </div>
           </div>
 
@@ -473,7 +653,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                   checked={burnOnRead}
                   onChange={(e) => setBurnOnRead(e.target.checked)}
                   className="cursor-pointer"
-                  disabled={uploading}
+                  disabled={uploading || shareType === 'chat'} 
                 />
               </div>
             </div>
@@ -496,7 +676,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           </div>
 
           <button 
-            disabled={!file || uploading}
+            disabled={(shareType === 'file' && !file) || (shareType === 'note' && !noteText.trim()) || uploading}
             onClick={triggerUpload}
             className="btn-cyber"
             style={{
@@ -509,7 +689,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               marginTop: '8px'
             }}
           >
-            Generate Link
+            {shareType === 'chat' ? 'Create Chat Room' : 'Generate Link'}
           </button>
         </div>
       ) : (
@@ -519,12 +699,16 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               <Shield className="w-4 h-4" />
               <span>Secure Link Generated</span>
             </div>
-            <p className="text-xs text-slate-500 max-w-[300px]">The file is now encrypted. Share this secure URL with the recipient.</p>
+            <p className="text-xs text-slate-500 max-w-[300px]">
+              {shareType === 'chat' 
+                ? 'Your ephemeral chat room is ready. Share this secure link with participants.' 
+                : 'The contents are encrypted locally. Share this secure link with the recipient.'}
+            </p>
           </div>
 
-          <div className="form-group-row" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: '#f8fafc' }}>
+          <div className="form-group-row" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-tertiary)' }}>
             <LinkIcon className="w-4 h-4 text-slate-400" style={{ flexShrink: 0 }} />
-            <span className="text-xs truncate text-slate-700" style={{ flex: 1, padding: '0 8px', textAlign: 'left' }}>{resultLink}</span>
+            <span className="text-xs truncate text-slate-700" style={{ flex: 1, padding: '0 8px', textAlign: 'left', color: 'var(--text-primary)' }}>{resultLink}</span>
             <button 
               onClick={copyToClipboard}
               className="btn-icon"
@@ -538,8 +722,9 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           <button 
             onClick={resetUploader}
             className="btn-cyber"
+            style={{ marginTop: '16px' }}
           >
-            Upload Another File
+            Create Another Share
           </button>
         </div>
       )}

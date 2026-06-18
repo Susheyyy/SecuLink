@@ -18,6 +18,11 @@ export class File extends Model {
   declare allowedIp: string | null;
   declare notificationEmail: string | null;
   declare isDirect: boolean;
+  declare allowedCountries: string | null;
+  declare accessWindowStart: string | null;
+  declare accessWindowEnd: string | null;
+  declare shareType: string;
+  declare cryptoSalt: string | null;
   declare readonly createdAt: Date;
   declare readonly updatedAt: Date;
 }
@@ -91,6 +96,27 @@ File.init(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
       allowNull: false,
+    },
+    allowedCountries: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    accessWindowStart: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    accessWindowEnd: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    shareType: {
+      type: DataTypes.STRING,
+      defaultValue: 'file',
+      allowNull: false,
+    },
+    cryptoSalt: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
   },
   {

@@ -1,4 +1,4 @@
-import { File, AuditLog, sequelize } from '../models';
+import { File, AuditLog, Message, sequelize } from '../models';
 import { isFirebaseEnabled, getFirestoreDB } from './storageService';
 
 export interface FileData {
@@ -18,6 +18,11 @@ export interface FileData {
   allowedIp?: string | null;
   notificationEmail?: string | null;
   isDirect?: boolean;
+  allowedCountries?: string | null;
+  accessWindowStart?: string | null;
+  accessWindowEnd?: string | null;
+  shareType?: string;
+  cryptoSalt?: string | null;
 }
 
 export interface LogData {
@@ -55,6 +60,11 @@ export async function createFileRecord(data: FileData): Promise<any> {
       allowedIp: data.allowedIp || null,
       notificationEmail: data.notificationEmail || null,
       isDirect: data.isDirect || false,
+      allowedCountries: data.allowedCountries || null,
+      accessWindowStart: data.accessWindowStart || null,
+      accessWindowEnd: data.accessWindowEnd || null,
+      shareType: data.shareType || 'file',
+      cryptoSalt: data.cryptoSalt || null,
     };
     
     await docRef.set(record);
@@ -74,6 +84,11 @@ export async function createFileRecord(data: FileData): Promise<any> {
       allowedIp: data.allowedIp || null,
       notificationEmail: data.notificationEmail || null,
       isDirect: data.isDirect || false,
+      allowedCountries: data.allowedCountries || null,
+      accessWindowStart: data.accessWindowStart || null,
+      accessWindowEnd: data.accessWindowEnd || null,
+      shareType: data.shareType || 'file',
+      cryptoSalt: data.cryptoSalt || null,
     });
     return fileRecord.toJSON();
   }
@@ -232,6 +247,57 @@ export async function getAllActiveFiles(): Promise<FileData[]> {
       where: { isDeleted: false }
     });
     return active.map(f => f.toJSON() as FileData);
+  }
+}
+
+export async function createChatMessage(data: { fileId: string; senderName: string; messageText: string; encryptionIv: string; authTag: string }): Promise<any> {
+  const db = getFirestoreDB();
+  if (isFirebaseEnabled() && db) {
+    const msgId = require('uuid').v4();
+    const docRef = db.collection('messages').doc(msgId);
+    const record = {
+      id: msgId,
+      fileId: data.fileId,
+      senderName: data.senderName,
+      messageText: data.messageText,
+      encryptionIv: data.encryptionIv,
+      authTag: data.authTag,
+      createdAt: adminTimestamp(new Date()),
+    };
+    await docRef.set(record);
+    return record;
+  } else {
+    const msg = await Message.create({
+      fileId: data.fileId,
+      senderName: data.senderName,
+      messageText: data.messageText,
+      encryptionIv: data.encryptionIv,
+      authTag: data.authTag,
+    });
+    return msg.toJSON();
+  }
+}
+
+export async function getChatMessages(fileId: string): Promise<any[]> {
+  const db = getFirestoreDB();
+  if (isFirebaseEnabled() && db) {
+    const snapshot = await db.collection('messages')
+      .where('fileId', '==', fileId)
+      .orderBy('createdAt', 'asc')
+      .get();
+    return snapshot.docs.map((doc: any) => {
+      const data = doc.data();
+      return {
+        ...data,
+        createdAt: new Date(data.createdAt.toDate())
+      };
+    });
+  } else {
+    const msgs = await Message.findAll({
+      where: { fileId },
+      order: [['createdAt', 'ASC']]
+    });
+    return msgs.map(m => m.toJSON());
   }
 }
 

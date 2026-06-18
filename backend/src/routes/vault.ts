@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 import { encryptFile, decryptFile, encryptFileKey } from '../services/cryptoService';
 import { shredFile } from '../services/cleanupService';
 import { scanFileBuffer } from '../services/virusScanService';
@@ -14,7 +15,9 @@ import {
   incrementDownloadCount, 
   writeAuditLog, 
   getAuditLogs, 
-  getAllActiveFiles 
+  getAllActiveFiles,
+  createChatMessage,
+  getChatMessages
 } from '../services/databaseService';
 import { 
   uploadEncryptedFile, 
@@ -37,6 +40,65 @@ function checkIpRestriction(allowedIp: string | null, clientIp: string): boolean
   return cleanClient === cleanAllowed || clientIp === allowed || clientIp.includes(allowed);
 }
 
+async function getCountryFromIp(ip: string): Promise<string> {
+  const cleanIp = ip.replace(/^::ffff:/, '');
+  if (
+    cleanIp === '127.0.0.1' || 
+    cleanIp === '::1' || 
+    cleanIp === 'localhost' || 
+    cleanIp.startsWith('192.168.') || 
+    cleanIp.startsWith('10.') ||
+    cleanIp.startsWith('172.16.')
+  ) {
+    return 'US'; 
+  }
+  
+  return new Promise((resolve) => {
+    const req = http.get(`http://ip-api.com/json/${cleanIp}`, { timeout: 1500 }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve(parsed.countryCode || 'US');
+        } catch {
+          resolve('US');
+        }
+      });
+    });
+    
+    req.on('error', () => resolve('US'));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve('US');
+    });
+    req.end();
+  });
+}
+
+function checkCountryRestriction(allowedCountries: string | null, clientCountry: string): boolean {
+  if (!allowedCountries || allowedCountries.trim() === '') return true;
+  const list = allowedCountries.split(',').map(c => c.trim().toUpperCase());
+  return list.includes(clientCountry.toUpperCase());
+}
+
+function checkTimeWindow(start: string | null, end: string | null): boolean {
+  if (!start || !end) return true;
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes <= endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  } else {
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
+}
+
 async function checkExpiration(file: any, ip: string): Promise<boolean> {
   if (file.isDeleted) return true;
   if (new Date() > new Date(file.expiresAt)) {
@@ -44,6 +106,48 @@ async function checkExpiration(file: any, ip: string): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+async function validateConstraints(file: any, req: Request): Promise<{ allowed: boolean; error?: string; status?: number }> {
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+  
+  const isExpired = await checkExpiration(file, ip);
+  if (isExpired) {
+    return { allowed: false, error: 'Link not found or expired.', status: 404 };
+  }
+
+  if (!checkIpRestriction(file.allowedIp, ip)) {
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'ACCESS_DENIED',
+      ipAddress: ip,
+      details: `Access denied: Client IP ${ip} does not match allowed IP restriction (${file.allowedIp}).`,
+    });
+    return { allowed: false, error: 'Access denied: Restricted recipient IP only.', status: 403 };
+  }
+
+  const country = await getCountryFromIp(ip);
+  if (!checkCountryRestriction(file.allowedCountries, country)) {
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'ACCESS_DENIED',
+      ipAddress: ip,
+      details: `Access denied: Country ${country} not in allowed geofence restriction (${file.allowedCountries}).`,
+    });
+    return { allowed: false, error: 'Access denied: Restricted geographic area only.', status: 403 };
+  }
+
+  if (!checkTimeWindow(file.accessWindowStart, file.accessWindowEnd)) {
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'ACCESS_DENIED',
+      ipAddress: ip,
+      details: `Access denied: Current time is outside allowed download window (${file.accessWindowStart} - ${file.accessWindowEnd}).`,
+    });
+    return { allowed: false, error: 'Access denied: Download window is currently closed.', status: 403 };
+  }
+
+  return { allowed: true };
 }
 
 router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<any> => {
@@ -72,7 +176,18 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       });
     }
 
-    const { password, burnOnRead, allowedIp, notificationEmail } = req.body;
+    const { 
+      password, 
+      burnOnRead, 
+      allowedIp, 
+      notificationEmail,
+      allowedCountries,
+      accessWindowStart,
+      accessWindowEnd,
+      shareType,
+      cryptoSalt
+    } = req.body;
+    
     const expireValue = parseInt(req.body.expireValue || '60', 10);
     const expireUnit = req.body.expireUnit || 'minutes'; 
 
@@ -95,19 +210,36 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     if (password && password.trim() !== '') {
       passwordHash = await argon2.hash(password);
     }
-
-    const encryption = encryptFile(fileBuffer);
-    const fileHash = uuidv4();
+    const isDirectZeroKnowledge = (req.body.isDirectZeroKnowledge === 'true' || req.body.isDirectZeroKnowledge === true);
     
-    await uploadEncryptedFile(fileHash, encryption.ciphertext);
+    let ciphertext: Buffer;
+    let encryptionKey: string;
+    let encryptionIv: string;
+    let authTag: string;
+
+    if (isDirectZeroKnowledge) {
+      ciphertext = fileBuffer;
+      encryptionKey = req.body.encryptionKey;
+      encryptionIv = req.body.encryptionIv;
+      authTag = req.body.authTag;
+    } else {
+      const encryption = encryptFile(fileBuffer);
+      ciphertext = encryption.ciphertext;
+      encryptionKey = encryption.envelope;
+      encryptionIv = encryption.iv;
+      authTag = encryption.authTag;
+    }
+    
+    const fileHash = uuidv4();
+    await uploadEncryptedFile(fileHash, ciphertext);
 
     const fileRecord = await createFileRecord({
       fileName: originalName,
       fileHash: fileHash,
       passwordHash: passwordHash,
-      encryptionKey: encryption.envelope,
-      encryptionIv: encryption.iv,
-      authTag: encryption.authTag,
+      encryptionKey: encryptionKey,
+      encryptionIv: encryptionIv,
+      authTag: authTag,
       mimeType: mimeType,
       fileSize: fileSize,
       expiresAt: expiresAt,
@@ -115,6 +247,11 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       allowedIp: allowedIp || null,
       notificationEmail: notificationEmail || null,
       isDirect: false,
+      allowedCountries: allowedCountries || null,
+      accessWindowStart: accessWindowStart || null,
+      accessWindowEnd: accessWindowEnd || null,
+      shareType: shareType || 'file',
+      cryptoSalt: cryptoSalt || null
     });
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
@@ -149,7 +286,12 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       encryptionKey,
       encryptionIv,
       authTag,
-      fileHash
+      fileHash,
+      allowedCountries,
+      accessWindowStart,
+      accessWindowEnd,
+      shareType,
+      cryptoSalt
     } = req.body;
 
     if (!fileName || !fileHash || !encryptionKey || !encryptionIv || !authTag) {
@@ -203,11 +345,11 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       uploadUrl = `http://localhost:${process.env.PORT || 5000}/api/vault/direct-upload/${fileHash}`;
     }
 
-    const fileRecord = await createFileRecord({
+      const fileRecord = await createFileRecord({
       fileName: fileName,
       fileHash: fileHash,
       passwordHash: passwordHash,
-      encryptionKey: encryptFileKey(Buffer.from(encryptionKey, 'hex')),
+      encryptionKey: encryptionKey, 
       encryptionIv: encryptionIv,
       authTag: authTag,
       mimeType: mimeType || 'application/octet-stream',
@@ -216,7 +358,12 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       maxDownloads: (burnOnRead === 'true' || burnOnRead === true) ? 1 : null,
       allowedIp: allowedIp || null,
       notificationEmail: notificationEmail || null,
-      isDirect: true
+      isDirect: true,
+      allowedCountries: allowedCountries || null,
+      accessWindowStart: accessWindowStart || null,
+      accessWindowEnd: accessWindowEnd || null,
+      shareType: shareType || 'file',
+      cryptoSalt: cryptoSalt || null
     });
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
@@ -282,20 +429,9 @@ router.get('/challenge/:uuid', async (req: Request, res: Response): Promise<any>
       return res.status(404).json({ error: 'Link not found or expired.' });
     }
 
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    const isExpired = await checkExpiration(file, ip);
-    if (isExpired) {
-      return res.status(404).json({ error: 'Link not found or expired.' });
-    }
-
-    if (!checkIpRestriction(file.allowedIp, ip)) {
-      await writeAuditLog({
-        fileId: file.id,
-        action: 'ACCESS_DENIED',
-        ipAddress: ip,
-        details: `Access denied: Client IP ${ip} does not match allowed IP restriction (${file.allowedIp}).`,
-      });
-      return res.status(403).json({ error: 'Access denied: Restricted recipient IP only.' });
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
     }
 
     return res.json({
@@ -306,6 +442,10 @@ router.get('/challenge/:uuid', async (req: Request, res: Response): Promise<any>
       expiresAt: file.expiresAt,
       hasPassword: file.passwordHash !== null,
       burnOnRead: file.maxDownloads === 1,
+      shareType: file.shareType || 'file',
+      cryptoSalt: file.cryptoSalt || null,
+      encryptionIv: file.encryptionIv,
+      authTag: file.authTag
     });
   } catch (error) {
     console.error('[CHALLENGE] Error:', error);
@@ -323,21 +463,12 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
       return res.status(404).json({ error: 'Link not found or expired.' });
     }
 
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
-    const isExpired = await checkExpiration(file, ip);
-    if (isExpired) {
-      return res.status(404).json({ error: 'Link not found or expired.' });
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
     }
 
-    if (!checkIpRestriction(file.allowedIp, ip)) {
-      await writeAuditLog({
-        fileId: file.id,
-        action: 'ACCESS_DENIED',
-        ipAddress: ip,
-        details: `Access denied: Client IP ${ip} does not match allowed IP restriction (${file.allowedIp}).`,
-      });
-      return res.status(403).json({ error: 'Access denied: Restricted recipient IP only.' });
-    }
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
 
     if (file.passwordHash) {
       if (!password) {
@@ -345,7 +476,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
           fileId: file.id,
           action: 'DOWNLOAD_FAIL',
           ipAddress: ip,
-          details: 'Failed download: Missing credentials.',
+          details: 'Failed access: Missing credentials.',
         });
         return res.status(401).json({ error: 'Password required.' });
       }
@@ -356,7 +487,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
           fileId: file.id,
           action: 'DOWNLOAD_FAIL',
           ipAddress: ip,
-          details: 'Failed download: Invalid credentials submitted.',
+          details: 'Failed access: Invalid credentials submitted.',
         });
         return res.status(401).json({ error: 'Invalid password.' });
       }
@@ -370,23 +501,16 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
         fileId: file.id,
         action: 'DOWNLOAD_FAIL',
         ipAddress: ip,
-        details: 'Failed download: File payload missing in storage.',
+        details: 'Failed access: File payload missing in storage.',
       });
       return res.status(500).json({ error: 'Encrypted file chunk missing from storage.' });
     }
-
-    const decrypted = decryptFile(
-      ciphertext,
-      file.encryptionKey,
-      file.encryptionIv,
-      file.authTag
-    );
 
     await writeAuditLog({
       fileId: file.id,
       action: 'DOWNLOAD_SUCCESS',
       ipAddress: ip,
-      details: 'File downloaded successfully.',
+      details: 'Encrypted payload served for client-side decryption.',
     });
 
     if (file.notificationEmail && file.notificationEmail.trim() !== '') {
@@ -396,7 +520,7 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
           'DOWNLOAD_SUCCESS',
           file.fileName,
           ip,
-          'Uploader notified: Link accessed and file successfully downloaded.'
+          'Uploader notified: Link accessed and encrypted payload served successfully.'
         );
       } catch (mailErr) {
         console.error('[DOWNLOAD] Email dispatch failed on success:', mailErr);
@@ -405,10 +529,10 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
 
     await incrementDownloadCount(file.id);
 
-    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
-    res.setHeader('Content-Type', file.mimeType);
-    res.setHeader('Content-Length', decrypted.length);
-    res.send(decrypted);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}.enc"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', ciphertext.length);
+    res.send(ciphertext);
 
     const nextCount = file.downloadCount + 1;
     if (file.maxDownloads && nextCount >= file.maxDownloads) {
@@ -418,7 +542,95 @@ router.post('/download/:uuid', async (req: Request, res: Response): Promise<any>
     }
   } catch (error) {
     console.error('[DOWNLOAD] Error:', error);
-    return res.status(500).json({ error: 'Decryption failed.' });
+    return res.status(500).json({ error: 'File transfer failed.' });
+  }
+});
+
+router.post('/chat-logs/:uuid', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { uuid } = req.params;
+    const { password } = req.body;
+    const file = await getFileRecord(uuid);
+
+    if (!file) {
+      return res.status(404).json({ error: 'Chat not found or expired.' });
+    }
+
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
+    }
+
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+
+    if (file.passwordHash) {
+      if (!password) {
+        return res.status(401).json({ error: 'Password required.' });
+      }
+      const match = await argon2.verify(file.passwordHash, password);
+      if (!match) {
+        return res.status(401).json({ error: 'Invalid password.' });
+      }
+    }
+
+    const messages = await getChatMessages(file.id);
+    return res.json({ messages });
+  } catch (error) {
+    console.error('[CHAT GET] Error:', error);
+    return res.status(500).json({ error: 'Failed to retrieve secure chat logs.' });
+  }
+});
+
+router.post('/chat-send/:uuid', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { uuid } = req.params;
+    const { password, senderName, messageText, encryptionIv, authTag } = req.body;
+
+    if (!senderName || !messageText || !encryptionIv || !authTag) {
+      return res.status(400).json({ error: 'Missing encrypted message components.' });
+    }
+
+    const file = await getFileRecord(uuid);
+    if (!file) {
+      return res.status(404).json({ error: 'Chat not found or expired.' });
+    }
+
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
+    }
+
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+
+    if (file.passwordHash) {
+      if (!password) {
+        return res.status(401).json({ error: 'Password required.' });
+      }
+      const match = await argon2.verify(file.passwordHash, password);
+      if (!match) {
+        return res.status(401).json({ error: 'Invalid password.' });
+      }
+    }
+
+    const messageRecord = await createChatMessage({
+      fileId: file.id,
+      senderName,
+      messageText,
+      encryptionIv,
+      authTag
+    });
+
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'CHAT_POST',
+      ipAddress: ip,
+      details: 'Encrypted message successfully appended to secure thread.',
+    });
+
+    return res.status(201).json({ success: true, message: messageRecord });
+  } catch (error) {
+    console.error('[CHAT POST] Error:', error);
+    return res.status(500).json({ error: 'Failed to transmit encrypted message.' });
   }
 });
 
