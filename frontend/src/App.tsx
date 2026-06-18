@@ -108,18 +108,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {isPurging && (
-        <div className="purge-overlay">
-          <AlertOctagon className="purge-icon animate-pulse" />
-          <h2 className="purge-title">Wiping Vault Shares</h2>
-          <p className="purge-subtitle">Permanently shredding keys and deleting active files from server volumes…</p>
-        </div>
-      )}
-      <div className="floating-controls-widget">
-        <div className="status-badge" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-          <span className="status-indicator"></span>
-          <span className="status-text-label">Vault Active</span>
-        </div>
         <button
           className="btn-theme-toggle"
           onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
@@ -127,11 +115,9 @@ export default function App() {
         >
           {theme === 'light' ? <Moon className="theme-icon" /> : <Sun className="theme-icon" />}
         </button>
-      </div>
 
       <div className="brand-header-section">
         <h1 className="brand-logo-text" onClick={navigateToDashboard}>SecuLink</h1>
-        <p className="brand-logo-subtitle">Zero-Knowledge Encrypted Ephemeral Vault</p>
       </div>
 
       {view === 'dashboard' ? (
@@ -205,9 +191,9 @@ export default function App() {
               <button
                 onClick={() => setShowApp(false)}
                 className="btn-icon"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px' }}
+                style={{ display: 'flex', alignItems: 'center', padding: '2px 6px'  }}
               >
-                ← Back to Home
+                ← 
               </button>
             </div>
 
@@ -261,10 +247,8 @@ export default function App() {
       )}
 
       <footer className="main-footer">
-        <span>SecuLink Protected File Vault</span>
+        <span> &copy; SecuLink 2026</span>
         <div className="footer-crypto-info">
-          <Terminal className="footer-icon" />
-          <span>AES-256-GCM / PBKDF2 Key Splitting</span>
         </div>
       </footer>
     </div>

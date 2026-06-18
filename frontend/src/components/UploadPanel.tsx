@@ -651,8 +651,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Shield className="w-4 h-4 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
-                <span>Configure Advanced Security Options (Optional)</span>
+                <span>Advanced Security Options (Optional)</span>
               </span>
               <span style={{ transform: showOptions ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px' }}>▼</span>
             </button>
