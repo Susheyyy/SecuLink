@@ -321,16 +321,75 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                 <span>Link Expiration</span>
               </div>
               <div className="form-group-row" style={{ gap: '10px' }}>
-                <input 
-                  type="number" 
-                  min="1"
-                  max="1440"
-                  value={expireValue}
-                  onChange={(e) => setExpireValue(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="cyber-input"
-                  style={{ width: '80px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  disabled={uploading}
-                />
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                  <input 
+                    type="number" 
+                    min="1"
+                    max="1440"
+                    value={expireValue}
+                    onChange={(e) => setExpireValue(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="cyber-input"
+                    style={{ 
+                      width: '90px', 
+                      paddingRight: '28px', 
+                      textAlign: 'left', 
+                      background: 'var(--bg-secondary)', 
+                      border: '1px solid var(--border-color)', 
+                      color: 'var(--text-primary)' 
+                    }}
+                    disabled={uploading}
+                  />
+                  <div style={{ 
+                    position: 'absolute', 
+                    right: '8px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    height: '24px', 
+                    justifyContent: 'center', 
+                    gap: '2px' 
+                  }}>
+                    <button 
+                      type="button" 
+                      onClick={() => setExpireValue(prev => Math.min(1440, prev + 1))}
+                      disabled={uploading}
+                      className="spin-btn"
+                      style={{ 
+                        background: 'none', 
+                        border: 'none', 
+                        padding: 0, 
+                        color: 'var(--text-secondary)', 
+                        fontSize: '9px', 
+                        lineHeight: '1', 
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      ▲
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setExpireValue(prev => Math.max(1, prev - 1))}
+                      disabled={uploading}
+                      className="spin-btn"
+                      style={{ 
+                        background: 'none', 
+                        border: 'none', 
+                        padding: 0, 
+                        color: 'var(--text-secondary)', 
+                        fontSize: '9px', 
+                        lineHeight: '1', 
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
                 <select 
                   value={expireUnit}
                   onChange={(e) => setExpireUnit(e.target.value)}

@@ -1272,3 +1272,29 @@ input[type="checkbox"]:checked::after {
     margin-bottom: 20px;
   }
 }
+
+/* Hide standard number input arrows */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Custom stepper button styles */
+.spin-btn {
+  opacity: 0.5;
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+.spin-btn:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--color-accent) !important;
+  transform: scale(1.25);
+}
+.spin-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+

@@ -17,6 +17,7 @@ export default function App() {
   const [view, setView] = useState<'dashboard' | 'download'>('dashboard');
   const [vaultUuid, setVaultUuid] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'shares' | 'logs'>('upload');
+  const [showApp, setShowApp] = useState(false);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('seculink_theme');
@@ -100,7 +101,10 @@ export default function App() {
 
   const clearLogs = useCallback(() => setLogs([]), []);
 
-  const navigateToDashboard = useCallback(() => { window.location.hash = ''; }, []);
+  const navigateToDashboard = useCallback(() => { 
+    window.location.hash = ''; 
+    setShowApp(false);
+  }, []);
 
   return (
     <div className="app-container">
@@ -130,100 +134,134 @@ export default function App() {
         <p className="brand-logo-subtitle">Zero-Knowledge Encrypted Ephemeral Vault</p>
       </div>
 
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        {view === 'dashboard' && (
-          <div className="instructions-container">
-            <h2 className="instructions-title">How does it work?</h2>
-            <div className="instructions-list">
-              <div className="instruction-item">
-                <span className="step-num">1</span>
-                <div className="step-content">
-                  <h3 className="step-title">Upload Your File</h3>
-                  <p className="step-desc">Add the file you want to share securely.</p>
-                </div>
-              </div>
-              <div className="instruction-item">
-                <span className="step-num">2</span>
-                <div className="step-content">
-                  <h3 className="step-title">Set Protection Options</h3>
-                  <p className="step-desc">Choose an expiry time, add a password, or enable a one-time download for extra security.</p>
-                </div>
-              </div>
-              <div className="instruction-item">
-                <span className="step-num">3</span>
-                <div className="step-content">
-                  <h3 className="step-title">Share the Link</h3>
-                  <p className="step-desc">Send the secure link to anyone you want to access the file.</p>
-                </div>
-              </div>
-              <div className="instruction-item">
-                <span className="step-num">4</span>
-                <div className="step-content">
-                  <h3 className="step-title">Recipient Downloads</h3>
-                  <p className="step-desc">The recipient opens the link and enters the password (if required).</p>
-                </div>
-              </div>
-              <div className="instruction-item">
-                <span className="step-num">5</span>
-                <div className="step-content">
-                  <h3 className="step-title">Auto-Delete</h3>
-                  <p className="step-desc">The file automatically disappears once it expires or reaches its download limit.</p>
+      {view === 'dashboard' ? (
+        !showApp ? (
+          /* PAGE 1: Landing Page */
+          <>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div className="instructions-container">
+                <h2 className="instructions-title">How does it work?</h2>
+                <div className="instructions-list">
+                  <div className="instruction-item">
+                    <span className="step-num">1</span>
+                    <div className="step-content">
+                      <h3 className="step-title">Upload Your File</h3>
+                      <p className="step-desc">Add the file you want to share securely.</p>
+                    </div>
+                  </div>
+                  <div className="instruction-item">
+                    <span className="step-num">2</span>
+                    <div className="step-content">
+                      <h3 className="step-title">Set Protection Options</h3>
+                      <p className="step-desc">Choose an expiry time, add a password, or enable a one-time download for extra security.</p>
+                    </div>
+                  </div>
+                  <div className="instruction-item">
+                    <span className="step-num">3</span>
+                    <div className="step-content">
+                      <h3 className="step-title">Share the Link</h3>
+                      <p className="step-desc">Send the secure link to anyone you want to access the file.</p>
+                    </div>
+                  </div>
+                  <div className="instruction-item">
+                    <span className="step-num">4</span>
+                    <div className="step-content">
+                      <h3 className="step-title">Recipient Downloads</h3>
+                      <p className="step-desc">The recipient opens the link and enters the password (if required).</p>
+                    </div>
+                  </div>
+                  <div className="instruction-item">
+                    <span className="step-num">5</span>
+                    <div className="step-content">
+                      <h3 className="step-title">Auto-Delete</h3>
+                      <p className="step-desc">The file automatically disappears once it expires or reaches its download limit.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
 
-      {view === 'dashboard' && (
-        <nav className="navbar">
-          <div className="nav-tabs-wrapper">
-            <button
-              className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
-              onClick={() => setActiveTab('upload')}
-            >
-              <span>Upload File</span>
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'shares' ? 'active' : ''}`}
-              onClick={() => setActiveTab('shares')}
-            >
-              <span>Active Shares</span>
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'logs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('logs')}
-            >
-              <span>Activity Log</span>
-            </button>
-          </div>
-        </nav>
-      )}
-
-      <main className="main-content">
-        {view === 'dashboard' ? (
-          <>
-            {activeTab === 'upload' && (
-              <UploadPanel addLog={addLog} onUploadSuccess={handleUploadSuccess} />
-            )}
-            {activeTab === 'shares' && (
-              <VaultStatus
-                links={links}
-                onRemoveLink={handleRemoveLink}
-                onNukeAll={handlePurgeAll}
-                addLog={addLog}
-              />
-            )}
-            {activeTab === 'logs' && (
-              <ConsolePanel logs={logs} onClear={clearLogs} />
-            )}
+            <div style={{ textAlign: 'center', marginTop: '36px', marginBottom: '64px' }}>
+              <button
+                onClick={() => setShowApp(true)}
+                className="btn-cyber"
+                style={{
+                  width: 'auto',
+                  padding: '14px 48px',
+                  borderRadius: '30px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  boxShadow: '0 4px 16px var(--color-accent-glow)'
+                }}
+              >
+                Try Now
+              </button>
+            </div>
           </>
         ) : (
+          /* PAGE 2: Actual Application Interface */
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', maxWidth: '680px', margin: '0 auto 16px auto' }}>
+              <button
+                onClick={() => setShowApp(false)}
+                className="btn-icon"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px' }}
+              >
+                ← Back to Home
+              </button>
+            </div>
+
+            <nav className="navbar">
+              <div className="nav-tabs-wrapper">
+                <button
+                  className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('upload')}
+                >
+                  <span>Upload File</span>
+                </button>
+                <button
+                  className={`nav-tab ${activeTab === 'shares' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('shares')}
+                >
+                  <span>Active Shares</span>
+                </button>
+                <button
+                  className={`nav-tab ${activeTab === 'logs' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('logs')}
+                >
+                  <span>Activity Log</span>
+                </button>
+              </div>
+            </nav>
+
+            <main className="main-content">
+              {activeTab === 'upload' && (
+                <UploadPanel addLog={addLog} onUploadSuccess={handleUploadSuccess} />
+              )}
+              {activeTab === 'shares' && (
+                <VaultStatus
+                  links={links}
+                  onRemoveLink={handleRemoveLink}
+                  onNukeAll={handlePurgeAll}
+                  addLog={addLog}
+                />
+              )}
+              {activeTab === 'logs' && (
+                <ConsolePanel logs={logs} onClear={clearLogs} />
+              )}
+            </main>
+          </>
+        )
+      ) : (
+        /* DOWNLOAD CHALLENGE ROUTE */
+        <main className="main-content">
           <div className="download-challenge-wrapper">
             <DownloadChallenge uuid={vaultUuid!} onBackToDashboard={navigateToDashboard} />
           </div>
-        )}
-      </main>
+        </main>
+      )}
 
       <footer className="main-footer">
         <span>SecuLink Protected File Vault</span>
