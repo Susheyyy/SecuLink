@@ -23,6 +23,10 @@ export interface FileData {
   accessWindowEnd?: string | null;
   shareType?: string;
   cryptoSalt?: string | null;
+  recipientEmail?: string | null;
+  otpCode?: string | null;
+  otpExpiresAt?: Date | null;
+  viewOnly?: boolean;
 }
 
 export interface LogData {
@@ -65,6 +69,10 @@ export async function createFileRecord(data: FileData): Promise<any> {
       accessWindowEnd: data.accessWindowEnd || null,
       shareType: data.shareType || 'file',
       cryptoSalt: data.cryptoSalt || null,
+      recipientEmail: data.recipientEmail || null,
+      otpCode: null,
+      otpExpiresAt: null,
+      viewOnly: data.viewOnly || false,
     };
     
     await docRef.set(record);
@@ -89,6 +97,10 @@ export async function createFileRecord(data: FileData): Promise<any> {
       accessWindowEnd: data.accessWindowEnd || null,
       shareType: data.shareType || 'file',
       cryptoSalt: data.cryptoSalt || null,
+      recipientEmail: data.recipientEmail || null,
+      otpCode: null,
+      otpExpiresAt: null,
+      viewOnly: data.viewOnly || false,
     });
     return fileRecord.toJSON();
   }
@@ -105,7 +117,8 @@ export async function getFileRecord(id: string): Promise<any | null> {
     
     return {
       ...data,
-      expiresAt: new Date(data.expiresAt.toDate())
+      expiresAt: new Date(data.expiresAt.toDate()),
+      otpExpiresAt: data.otpExpiresAt ? new Date(data.otpExpiresAt.toDate()) : null,
     };
   } else {
     const fileRecord = await File.findByPk(id);
@@ -298,6 +311,25 @@ export async function getChatMessages(fileId: string): Promise<any[]> {
       order: [['createdAt', 'ASC']]
     });
     return msgs.map(m => m.toJSON());
+  }
+}
+
+export async function saveOtpCode(id: string, code: string, expiresAt: Date): Promise<void> {
+  const db = getFirestoreDB();
+  if (isFirebaseEnabled() && db) {
+    const docRef = db.collection('files').doc(id);
+    await docRef.update({
+      otpCode: code,
+      otpExpiresAt: adminTimestamp(expiresAt),
+      updatedAt: adminTimestamp(new Date())
+    });
+  } else {
+    const fileRecord = await File.findByPk(id);
+    if (fileRecord) {
+      fileRecord.otpCode = code;
+      fileRecord.otpExpiresAt = expiresAt;
+      await fileRecord.save();
+    }
   }
 }
 

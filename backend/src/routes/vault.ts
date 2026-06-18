@@ -17,7 +17,8 @@ import {
   getAuditLogs, 
   getAllActiveFiles,
   createChatMessage,
-  getChatMessages
+  getChatMessages,
+  saveOtpCode
 } from '../services/databaseService';
 import { 
   uploadEncryptedFile, 
@@ -185,7 +186,9 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       accessWindowStart,
       accessWindowEnd,
       shareType,
-      cryptoSalt
+      cryptoSalt,
+      recipientEmail,
+      viewOnly
     } = req.body;
     
     const expireValue = parseInt(req.body.expireValue || '60', 10);
@@ -210,6 +213,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     if (password && password.trim() !== '') {
       passwordHash = await argon2.hash(password);
     }
+
     const isDirectZeroKnowledge = (req.body.isDirectZeroKnowledge === 'true' || req.body.isDirectZeroKnowledge === true);
     
     let ciphertext: Buffer;
@@ -251,7 +255,9 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       accessWindowStart: accessWindowStart || null,
       accessWindowEnd: accessWindowEnd || null,
       shareType: shareType || 'file',
-      cryptoSalt: cryptoSalt || null
+      cryptoSalt: cryptoSalt || null,
+      recipientEmail: recipientEmail || null,
+      viewOnly: (viewOnly === 'true' || viewOnly === true)
     });
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
@@ -291,7 +297,9 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       accessWindowStart,
       accessWindowEnd,
       shareType,
-      cryptoSalt
+      cryptoSalt,
+      recipientEmail,
+      viewOnly
     } = req.body;
 
     if (!fileName || !fileHash || !encryptionKey || !encryptionIv || !authTag) {
@@ -345,7 +353,7 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       uploadUrl = `http://localhost:${process.env.PORT || 5000}/api/vault/direct-upload/${fileHash}`;
     }
 
-      const fileRecord = await createFileRecord({
+    const fileRecord = await createFileRecord({
       fileName: fileName,
       fileHash: fileHash,
       passwordHash: passwordHash,
@@ -363,7 +371,9 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       accessWindowStart: accessWindowStart || null,
       accessWindowEnd: accessWindowEnd || null,
       shareType: shareType || 'file',
-      cryptoSalt: cryptoSalt || null
+      cryptoSalt: cryptoSalt || null,
+      recipientEmail: recipientEmail || null,
+      viewOnly: (viewOnly === 'true' || viewOnly === true)
     });
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
@@ -434,6 +444,9 @@ router.get('/challenge/:uuid', async (req: Request, res: Response): Promise<any>
       return res.status(validation.status || 403).json({ error: validation.error });
     }
 
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+    const cleanIp = ip.replace(/^::ffff:/, '');
+
     return res.json({
       id: file.id,
       fileName: file.fileName,
@@ -445,11 +458,143 @@ router.get('/challenge/:uuid', async (req: Request, res: Response): Promise<any>
       shareType: file.shareType || 'file',
       cryptoSalt: file.cryptoSalt || null,
       encryptionIv: file.encryptionIv,
-      authTag: file.authTag
+      authTag: file.authTag,
+      recipientEmail: file.recipientEmail || null,
+      viewOnly: file.viewOnly || false,
+      clientIp: cleanIp
     });
   } catch (error) {
     console.error('[CHALLENGE] Error:', error);
     return res.status(500).json({ error: 'Database retrieval error.' });
+  }
+});
+
+router.post('/otp-request/:uuid', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { uuid } = req.params;
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required.' });
+    }
+
+    const file = await getFileRecord(uuid);
+    if (!file) {
+      return res.status(404).json({ error: 'Link not found or expired.' });
+    }
+
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
+    }
+
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+
+    if (!file.recipientEmail) {
+      return res.status(400).json({ error: 'Email verification is not enabled for this share.' });
+    }
+
+    if (email.trim().toLowerCase() !== file.recipientEmail.trim().toLowerCase()) {
+      await writeAuditLog({
+        fileId: file.id,
+        action: 'ACCESS_DENIED',
+        ipAddress: ip,
+        details: `OTP request rejected: Email ${email} does not match allowed recipient address (${file.recipientEmail}).`,
+      });
+      return res.status(403).json({ error: 'Access denied: Email address does not match allowed recipient.' });
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 5); 
+    await saveOtpCode(file.id, code, expiresAt);
+
+    try {
+      await sendNotificationEmail(
+        email.trim(),
+        'DOWNLOAD_SUCCESS', 
+        file.fileName,
+        ip,
+        `Your SecuLink verification code is: ${code}. Valid for 5 minutes. Enter this code on the verification challenge page to access the secure contents.`
+      );
+    } catch (mailErr) {
+      console.error('[OTP EMAIL] NodeMailer failed to send verification code:', mailErr);
+    }
+
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'OTP_SENT',
+      ipAddress: ip,
+      details: `OTP access verification code successfully sent to: ${email}.`,
+    });
+
+    return res.json({ success: true, message: 'Verification code sent.' });
+  } catch (error) {
+    console.error('[OTP REQUEST ERROR]', error);
+    return res.status(500).json({ error: 'Failed to request verification code.' });
+  }
+});
+
+router.post('/otp-verify/:uuid', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { uuid } = req.params;
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Email address and code are required.' });
+    }
+
+    const file = await getFileRecord(uuid);
+    if (!file) {
+      return res.status(404).json({ error: 'Link not found or expired.' });
+    }
+
+    const validation = await validateConstraints(file, req);
+    if (!validation.allowed) {
+      return res.status(validation.status || 403).json({ error: validation.error });
+    }
+
+    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+
+    if (!file.recipientEmail) {
+      return res.status(400).json({ error: 'Email verification is not enabled for this share.' });
+    }
+
+    if (email.trim().toLowerCase() !== file.recipientEmail.trim().toLowerCase()) {
+      return res.status(403).json({ error: 'Email address does not match allowed recipient.' });
+    }
+
+    if (!file.otpCode || file.otpCode !== code) {
+      await writeAuditLog({
+        fileId: file.id,
+        action: 'ACCESS_DENIED',
+        ipAddress: ip,
+        details: `OTP challenge failed: Invalid verification code submitted.`,
+      });
+      return res.status(401).json({ error: 'Invalid verification code.' });
+    }
+
+    if (!file.otpExpiresAt || new Date() > new Date(file.otpExpiresAt)) {
+      await writeAuditLog({
+        fileId: file.id,
+        action: 'ACCESS_DENIED',
+        ipAddress: ip,
+        details: `OTP challenge failed: Verification code has expired.`,
+      });
+      return res.status(401).json({ error: 'Verification code has expired. Please request a new one.' });
+    }
+
+    await writeAuditLog({
+      fileId: file.id,
+      action: 'OTP_VERIFIED',
+      ipAddress: ip,
+      details: `OTP access verification code successfully verified for: ${email}.`,
+    });
+
+    return res.json({ success: true, verified: true });
+  } catch (error) {
+    console.error('[OTP VERIFY ERROR]', error);
+    return res.status(500).json({ error: 'Failed to verify verification code.' });
   }
 });
 

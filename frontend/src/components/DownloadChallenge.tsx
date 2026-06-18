@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Shield, ShieldAlert, Key, Download, RefreshCw, AlertTriangle, FileCheck, Clock, Copy, Send, User } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Shield, ShieldAlert, Key, RefreshCw, AlertTriangle, FileCheck, Clock, Copy, Send, User } from 'lucide-react';
 import { decryptInWorker } from '../utils/cryptoWorker';
 
 interface DownloadChallengeProps {
@@ -19,6 +19,9 @@ interface FileMetadata {
   cryptoSalt: string | null;
   encryptionIv: string;
   authTag: string;
+  recipientEmail: string | null;
+  viewOnly: boolean;
+  clientIp: string;
 }
 
 interface ChatMessage {
@@ -134,16 +137,90 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatPollRef = useRef<number | null>(null);
 
+  // OTP Access States
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpLoading, setOtpLoading] = useState(false);
+
+  // Secure View Only States
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+
+  const fetchChallengeInfo = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`http://localhost:5000/api/vault/challenge/${uuid}`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Vault slug is voided or expired.');
+      }
+      const data = await response.json();
+      setMeta(data);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Unable to establish host handshake.');
+    } finally {
+      setLoading(false);
+    }
+  }, [uuid]);
+
+  const fetchChatLogs = useCallback(async () => {
+    if (!meta || !activeKey) return;
+    try {
+      const passVal = password.trim() ? password : null;
+      const response = await fetch(`http://localhost:5000/api/vault/chat-logs/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passVal }),
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const rawMsgs: ChatMessage[] = data.messages;
+
+      const decryptedMsgs = await Promise.all(
+        rawMsgs.map(async (msg) => {
+          try {
+            const sender = await decryptText(msg.senderName, msg.encryptionIv, msg.authTag, activeKey);
+            const text = await decryptText(msg.messageText, msg.encryptionIv, msg.authTag, activeKey);
+            return {
+              ...msg,
+              decryptedSender: sender,
+              decryptedText: text
+            };
+          } catch {
+            return {
+              ...msg,
+              decryptedSender: 'Decryption Error',
+              decryptedText: '[Encrypted payload could not be decrypted]'
+            };
+          }
+        })
+      );
+
+      setChatMessages(decryptedMsgs);
+    } catch (err) {
+      console.error('[CHAT POLL ERROR]', err);
+    }
+  }, [meta, activeKey, password, uuid]);
+
   useEffect(() => {
     const hashParts = window.location.hash.split('#');
     if (hashParts[2] && hashParts[2].length === 64) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRawKeyHex(hashParts[2]);
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchChallengeInfo();
-  }, [uuid]);
+  }, [uuid, fetchChallengeInfo]);
 
   useEffect(() => {
     if (!meta) return;
@@ -175,34 +252,77 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
 
   useEffect(() => {
     if (isChatUnlocked && meta && meta.shareType === 'chat') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchChatLogs();
       chatPollRef.current = window.setInterval(fetchChatLogs, 3000);
     }
     return () => {
       if (chatPollRef.current) window.clearInterval(chatPollRef.current);
     };
-  }, [isChatUnlocked, activeKey]);
+  }, [isChatUnlocked, fetchChatLogs, meta]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const fetchChallengeInfo = async () => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    if (meta?.viewOnly && downloadSuccess) {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (
+          (e.ctrlKey && (e.key === 'c' || e.key === 's' || e.key === 'p' || e.key === 'a')) ||
+          e.key === 'PrintScreen'
+        ) {
+          e.preventDefault();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [meta, downloadSuccess]);
+
+  const handleOtpRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!meta) return;
+    setOtpLoading(true);
+    setOtpError(null);
     try {
-      const response = await fetch(`http://localhost:5000/api/vault/challenge/${uuid}`);
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Vault slug is voided or expired.');
-      }
+      const response = await fetch(`http://localhost:5000/api/vault/otp-request/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: otpEmail }),
+      });
       const data = await response.json();
-      setMeta(data);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Unable to establish host handshake.');
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send verification code.');
+      }
+      setOtpSent(true);
+    } catch (err: unknown) {
+      setOtpError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setOtpLoading(false);
+    }
+  };
+
+  const handleOtpVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!meta) return;
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      const response = await fetch(`http://localhost:5000/api/vault/otp-verify/${uuid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: otpEmail, code: otpCode }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Invalid verification code.');
+      }
+      setIsOtpVerified(true);
+    } catch (err: unknown) {
+      setOtpError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOtpLoading(false);
     }
   };
 
@@ -296,66 +416,44 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
           rawKeyHex || undefined
         );
 
-        const downloadUrl = window.URL.createObjectURL(new Blob([decryptedBuffer], { type: meta.mimeType }));
-        const tempLink = document.createElement('a');
-        tempLink.href = downloadUrl;
-        tempLink.setAttribute('download', meta.fileName);
-        document.body.appendChild(tempLink);
-        tempLink.click();
-        tempLink.remove();
-        window.URL.revokeObjectURL(downloadUrl);
+        if (meta.viewOnly) {
+          const mimeLower = meta.mimeType.toLowerCase();
+          const nameLower = meta.fileName.toLowerCase();
+          if (
+            mimeLower.startsWith('text/') ||
+            mimeLower === 'application/json' ||
+            nameLower.endsWith('.txt') ||
+            nameLower.endsWith('.md') ||
+            nameLower.endsWith('.json')
+          ) {
+            const decodedText = new TextDecoder().decode(decryptedBuffer);
+            setPreviewText(decodedText);
+          } else {
+            const previewBlob = new Blob([decryptedBuffer], { type: meta.mimeType });
+            const objUrl = window.URL.createObjectURL(previewBlob);
+            setPreviewUrl(objUrl);
+          }
+        } else {
+          const downloadUrl = window.URL.createObjectURL(new Blob([decryptedBuffer], { type: meta.mimeType }));
+          const tempLink = document.createElement('a');
+          tempLink.href = downloadUrl;
+          tempLink.setAttribute('download', meta.fileName);
+          document.body.appendChild(tempLink);
+          tempLink.click();
+          tempLink.remove();
+          window.URL.revokeObjectURL(downloadUrl);
+        }
 
         setDownloadSuccess(true);
         if (meta.burnOnRead) {
           setMeta(prev => prev ? { ...prev, fileName: 'REDACTED' } : null);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setDownloadError(err.message || 'Decryption cascade failure. Check credentials.');
+      setDownloadError(err instanceof Error ? err.message : 'Decryption cascade failure. Check credentials.');
     } finally {
       setDownloading(false);
-    }
-  };
-
-  const fetchChatLogs = async () => {
-    if (!meta || !activeKey) return;
-    try {
-      const passVal = password.trim() ? password : null;
-      const response = await fetch(`http://localhost:5000/api/vault/chat-logs/${uuid}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passVal }),
-      });
-
-      if (!response.ok) return;
-
-      const data = await response.json();
-      const rawMsgs: ChatMessage[] = data.messages;
-
-      const decryptedMsgs = await Promise.all(
-        rawMsgs.map(async (msg) => {
-          try {
-            const sender = await decryptText(msg.senderName, msg.encryptionIv, msg.authTag, activeKey);
-            const text = await decryptText(msg.messageText, msg.encryptionIv, msg.authTag, activeKey);
-            return {
-              ...msg,
-              decryptedSender: sender,
-              decryptedText: text
-            };
-          } catch (e) {
-            return {
-              ...msg,
-              decryptedSender: 'Decryption Error',
-              decryptedText: '[Encrypted payload could not be decrypted]'
-            };
-          }
-        })
-      );
-
-      setChatMessages(decryptedMsgs);
-    } catch (err) {
-      console.error('[CHAT POLL ERROR]', err);
     }
   };
 
@@ -388,9 +486,9 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
 
       setTypedMessage('');
       await fetchChatLogs();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert(err.message || 'Failed to transmit secure message.');
+      alert(err instanceof Error ? err.message : 'Failed to transmit secure message.');
     } finally {
       setSendingMessage(false);
     }
@@ -448,26 +546,70 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
           <span className="brand-title" style={{ fontSize: '15px', textAlign: 'center', color: '#22c55e' }}>Secure Note Decrypted</span>
         </div>
 
-        <div className="w-full text-left bg-slate-900 text-slate-200 p-4 rounded-lg border border-slate-700 relative" style={{ background: '#0f172a', border: '1px solid #334155' }}>
+        <div 
+          className="w-full text-left bg-slate-900 text-slate-200 p-4 rounded-lg border border-slate-700 relative overflow-hidden" 
+          style={{ 
+            background: '#0f172a', 
+            border: '1px solid #334155',
+            userSelect: meta.viewOnly ? 'none' : 'text'
+          }}
+          onContextMenu={meta.viewOnly ? (e) => e.preventDefault() : undefined}
+        >
           <pre style={{ 
             fontFamily: "'SFMono-Regular', Consolas, monospace", 
             fontSize: '13px', 
             whiteSpace: 'pre-wrap', 
             wordBreak: 'break-all',
             margin: 0,
-            paddingRight: '36px',
+            paddingRight: meta.viewOnly ? '0px' : '36px',
             color: '#cbd5e1'
           }}>
             {noteText}
           </pre>
-          <button 
-            onClick={copyNoteToClipboard}
-            className="btn-icon"
-            style={{ position: 'absolute', top: '12px', right: '12px', padding: '6px', background: '#1e293b' }}
-            title="Copy note"
-          >
-            {noteCopied ? <Copy className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-400" />}
-          </button>
+          {!meta.viewOnly && (
+            <button 
+              onClick={copyNoteToClipboard}
+              className="btn-icon"
+              style={{ position: 'absolute', top: '12px', right: '12px', padding: '6px', background: '#1e293b' }}
+              title="Copy note"
+            >
+              {noteCopied ? <Copy className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-400" />}
+            </button>
+          )}
+
+          {meta.viewOnly && (
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gridTemplateRows: 'repeat(2, 1fr)',
+              gap: '20px',
+              padding: '10px',
+              zIndex: 10
+            }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div 
+                  key={i}
+                  style={{
+                    transform: 'rotate(-20deg)',
+                    color: 'rgba(148, 163, 184, 0.08)',
+                    fontSize: '9px',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {`CONFIDENTIAL | ${meta.clientIp || 'IP'} | ${new Date().toLocaleDateString()}`}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {meta.burnOnRead && (
@@ -616,78 +758,291 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
       </div>
 
       {!downloadSuccess ? (
-        <form onSubmit={handleAccessSubmit} className="flex flex-col space-y-5 w-full items-center justify-center">
-          <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-2 w-full text-center" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
-            <div className="text-xxs text-slate-500 tracking-wider font-semibold text-center" style={{ color: 'var(--text-muted)' }}>VAULT PARAMETERS:</div>
-            <div className="text-sm font-bold text-slate-800 truncate text-center max-w-[280px] mx-auto" style={{ color: 'var(--text-primary)' }}>
-              {meta.shareType === 'chat' ? 'Secure Ephemeral Chat Room' : meta.shareType === 'note' ? 'Secure Text Note' : meta.fileName}
-            </div>
-            
-            <div className="grid grid-cols-2 gap-2 text-xxs text-slate-500 pt-2 border-t border-slate-200 w-full text-center" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-              {meta.shareType !== 'chat' && <div className="text-center">SIZE: {getReadableSize(meta.fileSize)}</div>}
-              {meta.shareType !== 'chat' && <div className="text-center">ONE-TIME DELETION: {meta.burnOnRead ? 'YES' : 'NO'}</div>}
-              <div className="col-span-2 text-indigo-600 flex items-center justify-center mt-1 font-semibold text-center" style={{ color: 'var(--color-accent)' }}>
-                <Clock className="w-3.5 h-3.5 mr-1 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
-                <span>EXPIRES IN: {timeRemaining}</span>
+        meta.recipientEmail && !isOtpVerified ? (
+          <div className="flex flex-col space-y-5 w-full items-center justify-center">
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-2 w-full text-center" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
+              <div className="text-xxs text-slate-500 tracking-wider font-semibold text-center" style={{ color: 'var(--text-muted)' }}>RECIPIENT VERIFICATION:</div>
+              <div className="text-xs text-slate-600 text-center" style={{ color: 'var(--text-secondary)' }}>
+                This vault requires identity verification. Access code will be sent to the registered recipient's inbox.
               </div>
+            </div>
+
+            {!otpSent ? (
+              <form onSubmit={handleOtpRequest} className="flex flex-col space-y-3 w-full items-center">
+                <div className="flex flex-col space-y-1.5 w-full items-center justify-center text-center">
+                  <label className="text-xs font-semibold text-slate-700 tracking-wider flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
+                    Recipient Email Address
+                  </label>
+                  <input 
+                    type="email"
+                    required
+                    placeholder="Enter email to receive code"
+                    value={otpEmail}
+                    onChange={(e) => setOtpEmail(e.target.value)}
+                    className="cyber-input w-full text-center text-sm max-w-xs"
+                    disabled={otpLoading}
+                  />
+                </div>
+
+                {otpError && (
+                  <div className="text-xxs text-red-500 font-mono flex items-center justify-center space-x-1 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{otpError}</span>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={otpLoading}
+                  className="btn-cyber flex items-center justify-center space-x-2 py-2.5 mt-2"
+                >
+                  {otpLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sending code...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Verification Code</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleOtpVerify} className="flex flex-col space-y-3 w-full items-center">
+                <div className="flex flex-col space-y-1.5 w-full items-center justify-center text-center">
+                  <label className="text-xs font-semibold text-slate-700 tracking-wider flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
+                    Enter 6-Digit Code
+                  </label>
+                  <input 
+                    type="text"
+                    required
+                    maxLength={6}
+                    placeholder="123456"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    className="cyber-input w-full text-center text-sm max-w-xs tracking-[0.2em] font-mono font-bold"
+                    disabled={otpLoading}
+                  />
+                </div>
+
+                {otpError && (
+                  <div className="text-xxs text-red-500 font-mono flex items-center justify-center space-x-1 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{otpError}</span>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={otpLoading}
+                  className="btn-cyber flex items-center justify-center space-x-2 py-2.5 mt-2"
+                >
+                  {otpLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="w-4 h-4" />
+                      <span>Verify Code</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOtpSent(false)}
+                  className="text-xxs text-slate-400 hover:text-slate-600 underline mt-2"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Change Email or Resend Code
+                </button>
+              </form>
+            )}
+          </div>
+        ) : (
+          <form onSubmit={handleAccessSubmit} className="flex flex-col space-y-5 w-full items-center justify-center">
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-2 w-full text-center" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
+              <div className="text-xxs text-slate-500 tracking-wider font-semibold text-center" style={{ color: 'var(--text-muted)' }}>VAULT PARAMETERS:</div>
+              <div className="text-sm font-bold text-slate-800 truncate text-center max-w-[280px] mx-auto" style={{ color: 'var(--text-primary)' }}>
+                {meta.shareType === 'chat' ? 'Secure Ephemeral Chat Room' : meta.shareType === 'note' ? 'Secure Text Note' : meta.fileName}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 text-xxs text-slate-500 pt-2 border-t border-slate-200 w-full text-center" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                {meta.shareType !== 'chat' && <div className="text-center">SIZE: {getReadableSize(meta.fileSize)}</div>}
+                {meta.shareType !== 'chat' && <div className="text-center">ONE-TIME DELETION: {meta.burnOnRead ? 'YES' : 'NO'}</div>}
+                <div className="col-span-2 text-indigo-600 flex items-center justify-center mt-1 font-semibold text-center" style={{ color: 'var(--color-accent)' }}>
+                  <Clock className="w-3.5 h-3.5 mr-1 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
+                  <span>EXPIRES IN: {timeRemaining}</span>
+                </div>
+              </div>
+            </div>
+
+            {meta.hasPassword ? (
+              <div className="flex flex-col space-y-2 w-full items-center justify-center text-center">
+                <label className="text-xs font-semibold text-slate-700 tracking-wider flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
+                  <Key className="w-3.5 h-3.5 text-slate-400 mr-1.5" />
+                  VAULT PASSWORD
+                </label>
+                <input 
+                  type="password"
+                  required
+                  placeholder="Enter access password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="cyber-input w-full text-center text-sm max-w-xs"
+                  disabled={downloading}
+                />
+                {downloadError && (
+                  <div className="text-xxs text-red-500 font-mono flex items-center justify-center space-x-1 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{downloadError}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-2 bg-slate-50 border border-slate-200 rounded p-3 text-xxs text-slate-500 max-w-xs w-full" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                No password required. Click below to verify and enter.
+              </div>
+            )}
+
+            {meta.burnOnRead && meta.shareType !== 'chat' && (
+              <div className="bg-red-50 border border-red-200 p-3 rounded flex flex-col items-center justify-center text-center max-w-xs w-full" style={{ backgroundColor: 'rgba(239, 68, 68, 0.04)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+                <AlertTriangle className="w-5 h-5 text-red-500 mb-1.5" />
+                <div className="text-xxs text-red-600 leading-normal text-center font-medium">
+                  One-time read active: this item will be permanently shredded from the server immediately after download.
+                </div>
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              disabled={downloading}
+              className="btn-cyber flex items-center justify-center space-x-2 py-3"
+            >
+              {downloading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Unlocking secure key...</span>
+                </>
+              ) : (
+                <>
+                  <Shield className="w-4 h-4" />
+                  <span>{meta.shareType === 'chat' ? 'Enter Chat Room' : meta.shareType === 'note' ? 'View Secure Note' : 'Decrypt & Download'}</span>
+                </>
+              )}
+            </button>
+          </form>
+        )
+      ) : meta.viewOnly ? (
+        <div className="flex flex-col space-y-4 py-2 text-center items-center justify-center w-full max-w-lg mx-auto">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3 w-full" style={{ borderColor: 'var(--border-color)' }}>
+            <Shield className="text-indigo-600 w-5 h-5" />
+            <span className="brand-title text-left" style={{ fontSize: '14px', fontWeight: '700' }}>Secure View-Only Session</span>
+          </div>
+
+          <div className="text-left w-full text-xxs text-slate-400 bg-amber-500/10 border border-amber-500/20 rounded p-2.5 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <strong>Access Policy:</strong> Downloading, copying, right-clicking, and printing have been disabled by the owner. All access events are audited.
             </div>
           </div>
 
-          {meta.hasPassword ? (
-            <div className="flex flex-col space-y-2 w-full items-center justify-center text-center">
-              <label className="text-xs font-semibold text-slate-700 tracking-wider flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
-                <Key className="w-3.5 h-3.5 text-slate-400 mr-1.5" />
-                VAULT PASSWORD
-              </label>
-              <input 
-                type="password"
-                required
-                placeholder="Enter access password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="cyber-input w-full text-center text-sm max-w-xs"
-                disabled={downloading}
-              />
-              {downloadError && (
-                <div className="text-xxs text-red-500 font-mono flex items-center justify-center space-x-1 mt-1">
-                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>{downloadError}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-2 bg-slate-50 border border-slate-200 rounded p-3 text-xxs text-slate-500 max-w-xs w-full" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-              No password required. Click below to verify and enter.
-            </div>
-          )}
-
-          {meta.burnOnRead && meta.shareType !== 'chat' && (
-            <div className="bg-red-50 border border-red-200 p-3 rounded flex flex-col items-center justify-center text-center max-w-xs w-full" style={{ backgroundColor: 'rgba(239, 68, 68, 0.04)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
-              <AlertTriangle className="w-5 h-5 text-red-500 mb-1.5" />
-              <div className="text-xxs text-red-600 leading-normal text-center font-medium">
-                One-time read active: this item will be permanently shredded from the server immediately after download.
-              </div>
-            </div>
-          )}
-
-          <button 
-            type="submit"
-            disabled={downloading}
-            className="btn-cyber flex items-center justify-center space-x-2 py-3"
+          <div 
+            className="w-full relative overflow-hidden bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col justify-center items-center select-none"
+            style={{ minHeight: '300px', userSelect: 'none' }}
+            onContextMenu={(e) => e.preventDefault()}
           >
-            {downloading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Unlocking secure key...</span>
-              </>
+            {previewText !== null ? (
+              <pre style={{
+                fontFamily: "'SFMono-Regular', Consolas, monospace",
+                fontSize: '12px',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                margin: 0,
+                color: '#cbd5e1',
+                width: '100%',
+                textAlign: 'left'
+              }}>
+                {previewText}
+              </pre>
+            ) : previewUrl ? (
+              meta.mimeType.startsWith('image/') ? (
+                <img 
+                  src={previewUrl} 
+                  alt="Secure Document Preview" 
+                  className="max-w-full max-h-[400px] object-contain rounded pointer-events-none" 
+                />
+              ) : meta.mimeType === 'application/pdf' ? (
+                <iframe 
+                  src={`${previewUrl}#toolbar=0`} 
+                  className="w-full h-[400px] border-none rounded" 
+                  title="PDF Viewer" 
+                />
+              ) : (
+                <div className="text-center p-6 space-y-2">
+                  <ShieldAlert className="w-10 h-10 text-slate-500 mx-auto" />
+                  <div className="text-xs font-semibold text-slate-300">Format Preview Unsupported</div>
+                  <div className="text-xxs text-slate-400">In-browser preview is not supported for mime-type: {meta.mimeType}. Access is blocked to enforce security controls.</div>
+                </div>
+              )
             ) : (
-              <>
-                <Shield className="w-4 h-4" />
-                <span>{meta.shareType === 'chat' ? 'Enter Chat Room' : meta.shareType === 'note' ? 'View Secure Note' : 'Decrypt & Download'}</span>
-              </>
+              <div className="text-center py-8 text-xxs text-slate-400">Decrypting view payload...</div>
             )}
-          </button>
-        </form>
+
+            {/* Premium Rotated Watermark Overlay */}
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateRows: 'repeat(3, 1fr)',
+              gap: '40px',
+              padding: '20px',
+              zIndex: 30
+            }}>
+              {Array.from({ length: 9 }).map((_, i) => (
+                <div 
+                  key={i}
+                  style={{
+                    transform: 'rotate(-25deg)',
+                    color: 'rgba(148, 163, 184, 0.08)',
+                    fontSize: '9px',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {`SECULINK | ${meta.clientIp || 'IP'} | ${new Date().toLocaleDateString()}`}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {meta.burnOnRead && (
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded text-xxs text-amber-700 leading-normal text-center w-full">
+              <div className="font-bold mb-0.5 text-center">One-Time File Shredded:</div>
+              The encrypted file has been permanently purged from storage. Closing this window terminates access.
+            </div>
+          )}
+
+          <div className="w-full border-t border-slate-200 pt-3 items-center justify-center" style={{ borderColor: 'var(--border-color)' }}>
+            <button 
+              onClick={onBackToDashboard}
+              className="btn-cyber w-full text-xs font-semibold"
+            >
+              Close Viewer & Return
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col space-y-6 py-4 text-center items-center justify-center w-full">
           <div className="w-14 h-14 mx-auto rounded-full border border-green-200 bg-green-50 flex items-center justify-center">

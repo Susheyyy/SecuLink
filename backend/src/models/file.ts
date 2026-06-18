@@ -23,6 +23,10 @@ export class File extends Model {
   declare accessWindowEnd: string | null;
   declare shareType: string;
   declare cryptoSalt: string | null;
+  declare recipientEmail: string | null;
+  declare otpCode: string | null;
+  declare otpExpiresAt: Date | null;
+  declare viewOnly: boolean;
   declare readonly createdAt: Date;
   declare readonly updatedAt: Date;
 }
@@ -117,6 +121,23 @@ File.init(
     cryptoSalt: {
       type: DataTypes.STRING,
       allowNull: true,
+    },
+    recipientEmail: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    otpCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    otpExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    viewOnly: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
     },
   },
   {

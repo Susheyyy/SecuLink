@@ -68,10 +68,11 @@ export const VaultStatus: React.FC<VaultStatusProps> = ({ links, onRemoveLink, o
       const data = await response.json();
       setAuditLogs(data.logs);
       addLog('success', `[AUDIT] Retained ${data.logs.length} logged actions.`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       setAuditLogs([]);
-      addLog('error', `[AUDIT ERROR] Failed to fetch security heartbeat: ${error.message}`);
+      const err = error as Error;
+      addLog('error', `[AUDIT ERROR] Failed to fetch security heartbeat: ${err.message}`);
     } finally {
       setLoadingLogs(false);
     }
@@ -98,9 +99,10 @@ export const VaultStatus: React.FC<VaultStatusProps> = ({ links, onRemoveLink, o
       onNukeAll();
       setSelectedUuid(null);
       setAuditLogs([]);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      addLog('error', `[PURGE ERROR] Wipe aborted: ${error.message}`);
+      const err = error as Error;
+      addLog('error', `[PURGE ERROR] Wipe aborted: ${err.message}`);
     } finally {
       setPurging(false);
     }

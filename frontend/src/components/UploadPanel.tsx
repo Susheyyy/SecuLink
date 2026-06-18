@@ -8,6 +8,27 @@ interface UploadPanelProps {
   onUploadSuccess: (newLink: { uuid: string; fileName: string; expiresAt: string; burnOnRead: boolean }) => void;
 }
 
+function scanForSensitiveData(text: string): string[] {
+  const warnings: string[] = [];
+  
+  const ccRegex = /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9][0-9])[0-9]{12}|3[47][0-9]{13})\b/;
+  if (ccRegex.test(text)) {
+    warnings.push('Credit Card Number');
+  }
+
+  const aadhaarRegex = /\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/;
+  if (aadhaarRegex.test(text)) {
+    warnings.push('Aadhaar Number');
+  }
+
+  const apiKeyRegex = /(sk_live_[0-9a-zA-Z]{24})|(AIzaSy[0-9a-zA-Z_-]{35})|(ghp_[0-9a-zA-Z]{36})|(\b[a-zA-Z0-9_-]{32,64}\b.*(key|secret|password|passwd|token))/i;
+  if (apiKeyRegex.test(text)) {
+    warnings.push('Private API Key / Password');
+  }
+
+  return warnings;
+}
+
 export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState('');
@@ -27,9 +48,16 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
   const [shareType, setShareType] = useState('file');
   const [noteText, setNoteText] = useState('');
+  
   const [allowedCountries, setAllowedCountries] = useState('');
+  const [geoIN, setGeoIN] = useState(false);
+  const [geoSG, setGeoSG] = useState(false);
+  const [geoUS, setGeoUS] = useState(false);
+
   const [accessWindowStart, setAccessWindowStart] = useState('');
   const [accessWindowEnd, setAccessWindowEnd] = useState('');
+
+  const [viewOnly, setViewOnly] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -61,17 +89,40 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     }
   };
 
+  const getCompiledCountries = () => {
+    const list: string[] = [];
+    if (geoIN) list.push('IN');
+    if (geoSG) list.push('SG');
+    if (geoUS) list.push('US');
+    if (allowedCountries.trim()) {
+      allowedCountries.split(',').forEach(c => {
+        const clean = c.trim().toUpperCase();
+        if (clean && !list.includes(clean)) list.push(clean);
+      });
+    }
+    return list.join(',');
+  };
+
   const triggerUpload = async () => {
     let fileBuffer: ArrayBuffer;
-    let fileName = '';
-    let mimeType = '';
-    let fileSize = 0;
+    let fileName: string;
+    let mimeType: string;
+    let fileSize: number;
 
     if (shareType === 'note') {
       if (!noteText.trim()) {
         alert('Please enter a note to share.');
         return;
       }
+      
+      const warnings = scanForSensitiveData(noteText);
+      if (warnings.length > 0) {
+        const proceed = window.confirm(
+          `CAUTION: Potential sensitive data detected inside your note:\n- ${warnings.join('\n- ')}\n\nSharing secrets, credit cards, or personal identifiers is highly risky. Proceed anyway?`
+        );
+        if (!proceed) return;
+      }
+
       const noteBytes = new TextEncoder().encode(noteText);
       fileBuffer = noteBytes.buffer;
       fileName = 'note.txt';
@@ -88,6 +139,19 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         alert('Please select a file first.');
         return;
       }
+
+  
+      if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.json')) {
+        const text = await file.text();
+        const warnings = scanForSensitiveData(text);
+        if (warnings.length > 0) {
+          const proceed = window.confirm(
+            `CAUTION: Potential sensitive data detected inside file ${file.name}:\n- ${warnings.join('\n- ')}\n\nSharing credentials, passwords, or personal keys is high-risk. Proceed anyway?`
+          );
+          if (!proceed) return;
+        }
+      }
+
       fileBuffer = await file.arrayBuffer();
       fileName = file.name;
       mimeType = file.type || 'application/octet-stream';
@@ -116,13 +180,15 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
       const saltHex = salt.map(b => b.toString(16).padStart(2, '0')).join('');
       const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
       const authTagHex = encResult.authTag.map(b => b.toString(16).padStart(2, '0')).join('');
+      const finalCountries = getCompiledCountries();
 
       if (isDirect) {
         setStatusText('Requesting presigned upload URL...');
         addLog('info', `[NETWORK] Requester metadata validation...`);
 
         const randomHash = window.crypto.randomUUID ? window.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
         });
 
@@ -140,11 +206,13 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           encryptionIv: ivHex,
           authTag: authTagHex,
           fileHash: randomHash,
-          allowedCountries: allowedCountries.trim() || null,
+          allowedCountries: finalCountries || null,
           accessWindowStart: accessWindowStart || null,
           accessWindowEnd: accessWindowEnd || null,
           shareType,
-          cryptoSalt: saltHex
+          cryptoSalt: saltHex,
+          recipientEmail: notificationEmail.trim() || null,
+          viewOnly: viewOnly
         };
 
         const response = await fetch('http://localhost:5000/api/vault/signed-upload-url', {
@@ -212,9 +280,13 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         formData.append('burnOnRead', burnOnRead.toString());
         formData.append('shareType', shareType);
         formData.append('cryptoSalt', saltHex);
+        formData.append('viewOnly', viewOnly.toString());
         if (allowedIp.trim()) formData.append('allowedIp', allowedIp.trim());
-        if (notificationEmail.trim()) formData.append('notificationEmail', notificationEmail.trim());
-        if (allowedCountries.trim()) formData.append('allowedCountries', allowedCountries.trim());
+        if (notificationEmail.trim()) {
+          formData.append('notificationEmail', notificationEmail.trim());
+          formData.append('recipientEmail', notificationEmail.trim()); 
+        }
+        if (finalCountries) formData.append('allowedCountries', finalCountries);
         if (accessWindowStart) formData.append('accessWindowStart', accessWindowStart);
         if (accessWindowEnd) formData.append('accessWindowEnd', accessWindowEnd);
         if (hasPassword && password) {
@@ -251,10 +323,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
         addLog('success', `[VAULT] File encrypted and saved. UUID: ${result.uuid}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       setStatusText('Upload failed.');
-      addLog('error', `[UPLOAD ERROR] ${error.message || 'Connection failure.'}`);
+      const err = error as Error;
+      addLog('error', `[UPLOAD ERROR] ${err.message || 'Connection failure.'}`);
       setUploadProgress(0);
     } finally {
       setUploading(false);
@@ -281,8 +354,12 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     setShareType('file');
     setNoteText('');
     setAllowedCountries('');
+    setGeoIN(false);
+    setGeoSG(false);
+    setGeoUS(false);
     setAccessWindowStart('');
     setAccessWindowEnd('');
+    setViewOnly(false);
   };
 
   return (
@@ -291,7 +368,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         <div className="app-container" style={{ gap: '20px' }}>
 
           <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '10px 14px' }}>
-            <div className="form-group-title" style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', trackingSpace: '0.05em' }}>
+            <div className="form-group-title" style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               <span>Share Type</span>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -569,11 +646,25 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
               <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Globe className="w-3.5 h-3.5 text-slate-400" />
-                <span>Geofencing Country Block</span>
+                <span>Geofencing Restrictions</span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={geoIN} onChange={(e) => setGeoIN(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                  <span>India (IN)</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={geoSG} onChange={(e) => setGeoSG(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                  <span>Singapore (SG)</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={geoUS} onChange={(e) => setGeoUS(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                  <span>USA (US)</span>
+                </label>
               </div>
               <input 
                 type="text"
-                placeholder="e.g. US, CA, GB (Leave blank for all)"
+                placeholder="Custom country codes (e.g. CA, DE, GB)"
                 value={allowedCountries}
                 onChange={(e) => setAllowedCountries(e.target.value)}
                 className="cyber-input"
@@ -627,11 +718,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
               <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                <span>Email Alerts (Optional)</span>
+                <span>Recipient Email (Sends Access OTP)</span>
               </div>
               <input 
                 type="email"
-                placeholder="e.g. alerts@domain.com"
+                placeholder="e.g. verifier@domain.com"
                 value={notificationEmail}
                 onChange={(e) => setNotificationEmail(e.target.value)}
                 className="cyber-input"
@@ -643,9 +734,25 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
 
           <div className="form-grid">
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-row">
-                <div style={{ textAlign: 'left' }}>
-                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Enable One-Time Download</span>
+              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
+                <div style={{ textAlign: 'left', flex: 1 }}>
+                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Secure Viewing (View Only)</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Disable right-click / download, watermark viewer identity.</span>
+                </div>
+                <input 
+                  type="checkbox"
+                  checked={viewOnly}
+                  onChange={(e) => setViewOnly(e.target.checked)}
+                  className="cursor-pointer"
+                  disabled={uploading || shareType === 'chat'}
+                />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
+                <div style={{ textAlign: 'left', flex: 1 }}>
+                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>One-Time Download</span>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after download.</span>
                 </div>
                 <input 
@@ -653,11 +760,13 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                   checked={burnOnRead}
                   onChange={(e) => setBurnOnRead(e.target.checked)}
                   className="cursor-pointer"
-                  disabled={uploading || shareType === 'chat'} 
+                  disabled={uploading || shareType === 'chat' || viewOnly} 
                 />
               </div>
             </div>
+          </div>
 
+          <div className="form-grid">
             <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
               <div className="form-group-row">
                 <div style={{ textAlign: 'left' }}>
@@ -693,20 +802,20 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           </button>
         </div>
       ) : (
-        <div className="app-container">
-          <div className="app-container" style={{ gap: '8px' }}>
+        <div className="app-container" style={{ alignItems: 'center' }}>
+          <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
             <div className="header-badge" style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}>
               <Shield className="w-4 h-4" />
               <span>Secure Link Generated</span>
             </div>
-            <p className="text-xs text-slate-500 max-w-[300px]">
+            <p className="text-xs text-slate-500 max-w-[300px]" style={{ textAlign: 'center' }}>
               {shareType === 'chat' 
                 ? 'Your ephemeral chat room is ready. Share this secure link with participants.' 
                 : 'The contents are encrypted locally. Share this secure link with the recipient.'}
             </p>
           </div>
 
-          <div className="form-group-row" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-tertiary)' }}>
+          <div className="form-group-row" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', width: '100%', marginTop: '16px' }}>
             <LinkIcon className="w-4 h-4 text-slate-400" style={{ flexShrink: 0 }} />
             <span className="text-xs truncate text-slate-700" style={{ flex: 1, padding: '0 8px', textAlign: 'left', color: 'var(--text-primary)' }}>{resultLink}</span>
             <button 
@@ -719,10 +828,26 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             </button>
           </div>
 
+          <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(resultLink)}`} 
+              alt="Secure Access QR Code" 
+              style={{ 
+                border: '4px solid #ffffff', 
+                borderRadius: '8px', 
+                boxShadow: 'var(--card-shadow)',
+                background: '#ffffff',
+                width: '150px',
+                height: '150px'
+              }} 
+            />
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Scan QR code for secure mobile entry</span>
+          </div>
+
           <button 
             onClick={resetUploader}
             className="btn-cyber"
-            style={{ marginTop: '16px' }}
+            style={{ marginTop: '24px', width: 'auto', minWidth: '180px' }}
           >
             Create Another Share
           </button>
