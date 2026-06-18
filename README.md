@@ -1,35 +1,8 @@
-# SecuLink 🔒
+# SecuLink
 
-SecuLink is a modern, high-security web application designed to share sensitive files, documents, and notes. Using advanced client-side cryptography, it ensures that your files and messages are shared securely and self-destruct automatically based on rules you control.
+SecuLink is a full-stack web application that provides a secure, zero-knowledge, expiring file sharing platform. It enables users to upload, encrypt, and share files, notes, or documents with custom expiration leases, password protection, geofencing, IP restrictions, email verification, and view-only permissions.
 
----
-
-## 🚀 Live Demo & Screenshots
-
-### 🌐 Live Demo
-*Coming soon!* Check back here once the live staging environment link is configured.
-
-### 📸 Screenshots
-*(Add your screenshots below to visualize the user flow)*
-<table>
-  <tr>
-    <td width="50%">
-      <p align="center"><b>Page 1: Landing Page</b></p>
-      <!-- <img src="./screenshots/landing_page.png" alt="Landing Page" width="100%"/> -->
-      <p align="center"><i>Landing screen showing how SecuLink secure vault works</i></p>
-    </td>
-    <td width="50%">
-      <p align="center"><b>Page 2: Secure Upload Panel</b></p>
-      <!-- <img src="./screenshots/upload_panel.png" alt="Upload Panel" width="100%"/> -->
-      <p align="center"><i>Main uploader panel with advanced security controls accordion</i></p>
-    </td>
-  </tr>
-</table>
-
----
-
-## ✨ Key Features
-
+⚝ Features
 - **Private & Secure Storage**: Files and text notes are encrypted inside your browser before uploading. The server never sees your passwords or unencrypted files.
 - **Self-Destructing Links**: Set sharing links to automatically expire after a few minutes or hours.
 - **Password Locked**: Secure files with custom access passwords so only authorized people can view them.
@@ -44,104 +17,64 @@ SecuLink is a modern, high-security web application designed to share sensitive 
 - **Activity & History Logs**: Track when sharing links are created, accessed, or shredded.
 - **Emergency Wipe (System Nuke)**: A single click destroys all active file sharing allocations and wipes metadata from the database instantly.
 
----
+⚝ Tech Stack
+- Frontend: React.js, TypeScript, Custom Vanilla CSS, Lucide Icons
+- Backend: Node.js, Express, Multer
+- Database: SQLite, PostgreSQL, Sequelize ORM
+- File Storage: Local Filesystem, Firebase Cloud Storage
 
-## 🏗️ System Architecture
+⚝ System Architecture
+SecuLink is designed around zero-knowledge security and access control. The system is divided into five high-level areas:
+- Frontend: The client-side application handles user interface rendering, theme management, local file previews, and browser-side encryption. Keys are derived locally in the browser using PBKDF2/WebCrypto APIs so that plain text payloads are never transmitted across the network.
+- Encryption Layer: This layer manages the encryption and decryption processes. Payloads are encrypted using AES-256-GCM client-side. The metadata security envelopes are stored in the database, optionally encrypted with a server-managed master secret.
+- Backend API: A Node.js Express server validates access constraints (expiry, IP boundaries, active time windows, country restrictions). It also coordinates automated malware scanning, SMTP email alerts, and the ephemeral chat messages.
+- Database: Managed via Sequelize ORM, the database stores file records, expiration leases, chat histories, and audit logs. It supports SQLite for local testing and PostgreSQL for production.
+- File Storage: Manages physical file assets. Files are written locally to the server's uploads folder using stream-based operations, or pushed to a Firebase Cloud Storage bucket.
 
-SecuLink is designed around security, privacy, and zero-knowledge storage.
-
-```mermaid
-graph TD
-    User([User's Browser]) -->|1. Client-Side Encryption| Crypto[Web Crypto API / PBKDF2]
-    Crypto -->|2. Encrypted Payload + Metadata| Gateway[Backend API Gateway]
-    Gateway -->|3. Malware Check| ClamAV[(ClamAV Scanner)]
-    Gateway -->|4. Safe Storage| Storage{File Storage System}
-    Gateway -->|5. Metadata Envelope| DB[(Database Metadata)]
-    Storage --> LocalDisk[Local Disk Stream]
-    Storage --> Firebase[Firebase Cloud Storage]
-```
-
-### 💻 Frontend
-Built using **React** and **TypeScript** with custom **Vanilla CSS** for a highly responsive, modern interface.
-- Handles browser-side theme toggling (light/dark mode).
-- Derives client-side encryption keys using **PBKDF2/WebCrypto APIs** so raw secrets never leave the client.
-- Scans files locally for sensitive credentials before upload.
-- Displays responsive document preview frames in view-only mode and handles QR code rendering.
-
-### 🔒 Encryption Layer
-A hybrid encryption engine combining local zero-knowledge capabilities and server-assisted envelope wrappers:
-- Raw files are encrypted client-side using **AES-256-GCM**.
-- Key parameters (salt, IV, auth tags) are either derived on the client or encrypted using **AES-256-CBC** with a server-managed master key to form database security envelopes.
-
-### ⚙️ Backend API
-A **Node.js Express** server that coordinates access control and transfer security:
-- Validates structural permissions, IP locks, geographic regions, and active time windows.
-- Performs automated file sanitization and malware checking.
-- Dispatches SMTP authentication mailers and one-time verification passcodes (OTP).
-- Cleans and prunes expired files automatically using a recurring background worker.
-
-### 🗄️ Database
-Uses **Sequelize ORM** to coordinate metadata persistence:
-- Supports **SQLite** for light local execution and **PostgreSQL** for scalable production setups.
-- Records vault parameters, expiring leases, access logs, and encrypted ephemeral chat messages.
-
-### 📦 File Storage
-Manages physical payload distribution:
-- Streams file uploads to disk in small chunks to protect backend memory consumption.
-- Integrates easily with **Firebase Cloud Storage** or local directory volumes.
-
----
-
-## 🔌 Core API Endpoints
-
-### 📤 Upload Endpoint
-* **Endpoint**: `POST /api/vault/upload`
-* **Why we use it**: 
-  This endpoint is the entry point for vault uploads. It receives file payloads, runs an automated anti-malware scan, checks file formats, and writes the encrypted payload to the storage provider. It then saves key settings (such as passwords, expiration times, IP/country restrictions, and recipient emails) as metadata records in the database, returning a unique secure share link.
-
-### 🔑 Other Key Endpoints
-* **`POST /api/vault/signed-upload-url`**: Generates a temporary direct link so clients can upload larger payloads straight to Firebase storage without overloading server threads.
-* **`PUT /api/vault/direct-upload/:fileHash`**: Stream-writes direct payloads to local server storage volumes.
-* **`GET /api/vault/challenge/:uuid`**: Validates security criteria (expiry, IP restriction, geofence country, active hours) and lets the client know whether password inputs or OTP validation are required.
-* **`POST /api/vault/otp-request/:uuid`**: Dispatches a 6-digit verification code to the recipient's verified email address.
-* **`POST /api/vault/otp-verify/:uuid`**: Validates the recipient's OTP code.
-* **`POST /api/vault/download/:uuid`**: Serves the encrypted payload, notifications, and handles automatic destruction (Burn-on-Read).
-* **`POST /api/vault/chat-send/:uuid` & `POST /api/vault/chat-logs/:uuid`**: Handles encrypted messaging inside the temporary vault.
-* **`GET /api/vault/logs/:uuid`**: Returns transaction logs for review.
-* **`POST /api/vault/nuke`**: Triggers immediate erasure of all files and logs.
-
----
-
-## 🛠️ Installation & Setup
-
-1. **Clone the Repository**
+⚝ Installation & Setup
+1. Clone the Repository
    ```bash
    git clone https://github.com/Susheyyy/SecuLink.git
    cd SecuLink
    ```
-
-2. **Backend Config & Launch**
+2. Backend Setup
    ```bash
    cd backend
    npm install
    ```
-   Create a `.env` file from the example template:
-   ```bash
-   cp .env.example .env
+   Create a .env file in the /backend folder:
+   ```env
+   PORT=5000
+   NODE_ENV=development
+   SECRET_KEY=your_32_character_master_secret_here
+   FIREBASE_STORAGE_BUCKET=
+   FIREBASE_SERVICE_ACCOUNT_KEY=
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=your_email@gmail.com
+   SMTP_PASS=your_app_specific_password_here
+   EMAIL_FROM=noreply@seculink.com
    ```
-   *Edit `.env` to configure your custom `SECRET_KEY`, SMTP parameters, and storage setup.*
-   
-   Run the backend development server:
+   Run the backend server:
    ```bash
    npm run dev
    ```
-
-3. **Frontend Config & Launch**
+3. Frontend Setup
    ```bash
    cd ../frontend
    npm install
    npm run dev
    ```
 
-4. **Verify Application**
-   Open `http://localhost:5173` in your browser to test file sharing, security gates, and audit trails.
+⚝ How to Use
+- Upload Files: Drag and drop files or write a secure text note in the uploader dashboard.
+- Configure Access Rules: Choose the expiration duration (compulsory) and customize other settings under Advanced Security Options (password, geofencing, IP lock, or OTP verification).
+- Generate Secure Link: Click "Generate Link" to encrypt the file, create the database record, and display the private URL or dynamic QR code.
+- Recipient Verification: The recipient accesses the private link, completes the password or OTP challenge, and downloads or views the file securely.
+- Monitor and Purge: Track active allocations in the "Active Shares" panel, view audit logs, or trigger "Purge All Shares" to wipe everything immediately.
+
+⚝ Live Demo
+Live demo link: Coming soon.
+
+If you have feedback or ideas, feel free to reach out!
+If you like this project, consider giving it a star!
