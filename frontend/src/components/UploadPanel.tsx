@@ -58,6 +58,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
   const [accessWindowEnd, setAccessWindowEnd] = useState('');
 
   const [viewOnly, setViewOnly] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [hasGeofencing, setHasGeofencing] = useState(false);
+  const [hasActiveHours, setHasActiveHours] = useState(false);
+  const [hasAllowedIp, setHasAllowedIp] = useState(false);
+  const [hasRecipientEmail, setHasRecipientEmail] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -90,6 +95,7 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
   };
 
   const getCompiledCountries = () => {
+    if (!hasGeofencing) return '';
     const list: string[] = [];
     if (geoIN) list.push('IN');
     if (geoSG) list.push('SG');
@@ -180,7 +186,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
       const saltHex = salt.map(b => b.toString(16).padStart(2, '0')).join('');
       const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
       const authTagHex = encResult.authTag.map(b => b.toString(16).padStart(2, '0')).join('');
-      const finalCountries = getCompiledCountries();
+      const finalCountries = hasGeofencing ? getCompiledCountries() : '';
+      const finalAllowedIp = hasAllowedIp ? allowedIp.trim() : '';
+      const finalNotificationEmail = hasRecipientEmail ? notificationEmail.trim() : '';
+      const finalWindowStart = hasActiveHours ? accessWindowStart : null;
+      const finalWindowEnd = hasActiveHours ? accessWindowEnd : null;
 
       if (isDirect) {
         setStatusText('Requesting presigned upload URL...');
@@ -200,18 +210,18 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
           expireUnit,
           burnOnRead,
           password: (hasPassword && password) ? password : '',
-          allowedIp: allowedIp.trim() || null,
-          notificationEmail: notificationEmail.trim() || null,
+          allowedIp: finalAllowedIp || null,
+          notificationEmail: finalNotificationEmail || null,
           encryptionKey: encResult.keyHex || '',
           encryptionIv: ivHex,
           authTag: authTagHex,
           fileHash: randomHash,
           allowedCountries: finalCountries || null,
-          accessWindowStart: accessWindowStart || null,
-          accessWindowEnd: accessWindowEnd || null,
+          accessWindowStart: finalWindowStart || null,
+          accessWindowEnd: finalWindowEnd || null,
           shareType,
           cryptoSalt: saltHex,
-          recipientEmail: notificationEmail.trim() || null,
+          recipientEmail: finalNotificationEmail || null,
           viewOnly: viewOnly
         };
 
@@ -281,14 +291,14 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         formData.append('shareType', shareType);
         formData.append('cryptoSalt', saltHex);
         formData.append('viewOnly', viewOnly.toString());
-        if (allowedIp.trim()) formData.append('allowedIp', allowedIp.trim());
-        if (notificationEmail.trim()) {
-          formData.append('notificationEmail', notificationEmail.trim());
-          formData.append('recipientEmail', notificationEmail.trim()); 
+        if (finalAllowedIp) formData.append('allowedIp', finalAllowedIp);
+        if (finalNotificationEmail) {
+          formData.append('notificationEmail', finalNotificationEmail);
+          formData.append('recipientEmail', finalNotificationEmail); 
         }
         if (finalCountries) formData.append('allowedCountries', finalCountries);
-        if (accessWindowStart) formData.append('accessWindowStart', accessWindowStart);
-        if (accessWindowEnd) formData.append('accessWindowEnd', accessWindowEnd);
+        if (finalWindowStart) formData.append('accessWindowStart', finalWindowStart);
+        if (finalWindowEnd) formData.append('accessWindowEnd', finalWindowEnd);
         if (hasPassword && password) {
           formData.append('password', password);
         }
@@ -360,6 +370,11 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
     setAccessWindowStart('');
     setAccessWindowEnd('');
     setViewOnly(false);
+    setShowOptions(false);
+    setHasGeofencing(false);
+    setHasActiveHours(false);
+    setHasAllowedIp(false);
+    setHasRecipientEmail(false);
   };
 
   return (
@@ -528,260 +543,355 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
             </div>
           )}
 
-          <div className="form-grid">
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                <span>Link Expiration</span>
-              </div>
-              <div className="form-group-row" style={{ gap: '10px' }}>
-                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-                  <input 
-                    type="number" 
-                    min="1"
-                    max="1440"
-                    value={expireValue}
-                    onChange={(e) => setExpireValue(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="cyber-input"
-                    style={{ 
-                      width: '90px', 
-                      paddingRight: '28px', 
-                      textAlign: 'left', 
-                      background: 'var(--bg-secondary)', 
-                      border: '1px solid var(--border-color)', 
-                      color: 'var(--text-primary)' 
-                    }}
+          <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', marginTop: '16px' }}>
+            <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', textAlign: 'left' }}>
+              <span>Link Expiration Duration (Required)</span>
+            </div>
+            <div className="form-group-row" style={{ gap: '10px', display: 'flex', width: '100%' }}>
+              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                <input 
+                  type="number" 
+                  min="1"
+                  max="1440"
+                  value={expireValue}
+                  onChange={(e) => setExpireValue(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="cyber-input"
+                  style={{ 
+                    width: '90px', 
+                    paddingRight: '28px', 
+                    textAlign: 'left', 
+                    background: 'var(--bg-secondary)', 
+                    border: '1px solid var(--border-color)', 
+                    color: 'var(--text-primary)' 
+                  }}
+                  disabled={uploading}
+                />
+                <div style={{ 
+                  position: 'absolute', 
+                  right: '8px', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  height: '24px', 
+                  justifyContent: 'center', 
+                  gap: '2px' 
+                }}>
+                  <button 
+                    type="button" 
+                    onClick={() => setExpireValue(prev => Math.min(1440, prev + 1))}
                     disabled={uploading}
-                  />
-                  <div style={{ 
-                    position: 'absolute', 
-                    right: '8px', 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    height: '24px', 
-                    justifyContent: 'center', 
-                    gap: '2px' 
-                  }}>
-                    <button 
-                      type="button" 
-                      onClick={() => setExpireValue(prev => Math.min(1440, prev + 1))}
-                      disabled={uploading}
-                      className="spin-btn"
-                      style={{ 
-                        background: 'none', 
-                        border: 'none', 
-                        padding: 0, 
-                        color: 'var(--text-secondary)', 
-                        fontSize: '9px', 
-                        lineHeight: '1', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      ▲
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => setExpireValue(prev => Math.max(1, prev - 1))}
-                      disabled={uploading}
-                      className="spin-btn"
-                      style={{ 
-                        background: 'none', 
-                        border: 'none', 
-                        padding: 0, 
-                        color: 'var(--text-secondary)', 
-                        fontSize: '9px', 
-                        lineHeight: '1', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      ▼
-                    </button>
+                    className="spin-btn"
+                    style={{ 
+                      background: 'none', 
+                      border: 'none', 
+                      padding: 0, 
+                      color: 'var(--text-secondary)', 
+                      fontSize: '9px', 
+                      lineHeight: '1', 
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    ▲
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setExpireValue(prev => Math.max(1, prev - 1))}
+                    disabled={uploading}
+                    className="spin-btn"
+                    style={{ 
+                      background: 'none', 
+                      border: 'none', 
+                      padding: 0, 
+                      color: 'var(--text-secondary)', 
+                      fontSize: '9px', 
+                      lineHeight: '1', 
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+              <select 
+                value={expireUnit}
+                onChange={(e) => setExpireUnit(e.target.value)}
+                className="cyber-select"
+                style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                disabled={uploading}
+              >
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ width: '100%', marginTop: '16px' }}>
+            <button
+              type="button"
+              onClick={() => setShowOptions(!showOptions)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                fontWeight: '600',
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Shield className="w-4 h-4 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
+                <span>Configure Advanced Security Options (Optional)</span>
+              </span>
+              <span style={{ transform: showOptions ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px' }}>▼</span>
+            </button>
+
+            {showOptions && (
+              <div className="app-container" style={{ marginTop: '14px', gap: '14px' }}>
+                <div className="form-grid">
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', opacity: hasPassword ? 1 : 0.8 }}>
+                    <div className="form-group-row" style={{ marginBottom: '8px', justifyContent: 'space-between' }}>
+                      <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Password Protection</span>
+                      <input 
+                        type="checkbox"
+                        checked={hasPassword}
+                        onChange={(e) => {
+                          setHasPassword(e.target.checked);
+                          if (!e.target.checked) setPassword('');
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                    <input 
+                      type="password"
+                      placeholder={hasPassword ? "Enter Access Password" : "Not Enabled"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="cyber-input"
+                      style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                      disabled={!hasPassword || uploading}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', justifyContent: 'center' }}>
+                    <div className="form-group-row" style={{ gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ textAlign: 'left', flex: 1 }}>
+                        <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>One-Time Download</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after download.</span>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={burnOnRead}
+                        onChange={(e) => setBurnOnRead(e.target.checked)}
+                        className="cursor-pointer"
+                        disabled={uploading || shareType === 'chat' || viewOnly} 
+                      />
+                    </div>
                   </div>
                 </div>
-                <select 
-                  value={expireUnit}
-                  onChange={(e) => setExpireUnit(e.target.value)}
-                  className="cyber-select"
-                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  disabled={uploading}
-                >
-                  <option value="minutes">Minutes</option>
-                  <option value="hours">Hours</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-row" style={{ marginBottom: '8px' }}>
-                <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Password Protection</span>
-                <input 
-                  type="checkbox"
-                  checked={hasPassword}
-                  onChange={(e) => {
-                    setHasPassword(e.target.checked);
-                    if (!e.target.checked) setPassword('');
-                  }}
-                  className="cursor-pointer"
-                  disabled={uploading}
-                />
-              </div>
-              <input 
-                type="password"
-                placeholder={hasPassword ? "Enter Access Password" : ""}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="cyber-input"
-                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                disabled={!hasPassword || uploading}
-              />
-            </div>
-          </div>
+                <div className="form-grid">
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', justifyContent: 'center' }}>
+                    <div className="form-group-row" style={{ gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ textAlign: 'left', flex: 1 }}>
+                        <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Secure Viewing (View Only)</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Disable right-click / download, watermark viewer identity.</span>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={viewOnly}
+                        onChange={(e) => {
+                          setViewOnly(e.target.checked);
+                          if (e.target.checked) setBurnOnRead(false);
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading || shareType === 'chat'}
+                      />
+                    </div>
+                  </div>
 
-          <div className="form-grid">
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Globe className="w-3.5 h-3.5 text-slate-400" />
-                <span>Geofencing Restrictions</span>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                  <input type="checkbox" checked={geoIN} onChange={(e) => setGeoIN(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
-                  <span>India (IN)</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                  <input type="checkbox" checked={geoSG} onChange={(e) => setGeoSG(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
-                  <span>Singapore (SG)</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
-                  <input type="checkbox" checked={geoUS} onChange={(e) => setGeoUS(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
-                  <span>USA (US)</span>
-                </label>
-              </div>
-              <input 
-                type="text"
-                placeholder="Custom country codes (e.g. CA, DE, GB)"
-                value={allowedCountries}
-                onChange={(e) => setAllowedCountries(e.target.value)}
-                className="cyber-input"
-                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                disabled={uploading}
-              />
-            </div>
-
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Active Download Hours</span>
-              </div>
-              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
-                <input 
-                  type="time"
-                  value={accessWindowStart}
-                  onChange={(e) => setAccessWindowStart(e.target.value)}
-                  className="cyber-input"
-                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
-                  disabled={uploading}
-                />
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
-                <input 
-                  type="time"
-                  value={accessWindowEnd}
-                  onChange={(e) => setAccessWindowEnd(e.target.value)}
-                  className="cyber-input"
-                  style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
-                  disabled={uploading}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                <span>Allowed Receiver IP (Optional)</span>
-              </div>
-              <input 
-                type="text"
-                placeholder="e.g. 192.168.1.100"
-                value={allowedIp}
-                onChange={(e) => setAllowedIp(e.target.value)}
-                className="cyber-input"
-                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                disabled={uploading}
-              />
-            </div>
-
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                <span>Recipient Email (Sends Access OTP)</span>
-              </div>
-              <input 
-                type="email"
-                placeholder="e.g. verifier@domain.com"
-                value={notificationEmail}
-                onChange={(e) => setNotificationEmail(e.target.value)}
-                className="cyber-input"
-                style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                disabled={uploading}
-              />
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
-                <div style={{ textAlign: 'left', flex: 1 }}>
-                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Secure Viewing (View Only)</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Disable right-click / download, watermark viewer identity.</span>
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', justifyContent: 'center' }}>
+                    <div className="form-group-row" style={{ gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ textAlign: 'left', flex: 1 }}>
+                        <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Direct Cloud Upload (Signed PUT)</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Encrypt locally, upload direct (bypasses server).</span>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        checked={isDirect}
+                        onChange={(e) => setIsDirect(e.target.checked)}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <input 
-                  type="checkbox"
-                  checked={viewOnly}
-                  onChange={(e) => setViewOnly(e.target.checked)}
-                  className="cursor-pointer"
-                  disabled={uploading || shareType === 'chat'}
-                />
-              </div>
-            </div>
 
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
-                <div style={{ textAlign: 'left', flex: 1 }}>
-                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>One-Time Download</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Link automatically deletes after download.</span>
-                </div>
-                <input 
-                  type="checkbox"
-                  checked={burnOnRead}
-                  onChange={(e) => setBurnOnRead(e.target.checked)}
-                  className="cursor-pointer"
-                  disabled={uploading || shareType === 'chat' || viewOnly} 
-                />
-              </div>
-            </div>
-          </div>
+                <div className="form-grid">
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', opacity: hasGeofencing ? 1 : 0.8 }}>
+                    <div className="form-group-row" style={{ marginBottom: '8px', justifyContent: 'space-between' }}>
+                      <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Globe className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Geofencing Restrictions</span>
+                      </span>
+                      <input 
+                        type="checkbox"
+                        checked={hasGeofencing}
+                        onChange={(e) => {
+                          setHasGeofencing(e.target.checked);
+                          if (!e.target.checked) {
+                            setGeoIN(false);
+                            setGeoSG(false);
+                            setGeoUS(false);
+                            setAllowedCountries('');
+                          }
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                    {hasGeofencing ? (
+                      <>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                            <input type="checkbox" checked={geoIN} onChange={(e) => setGeoIN(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                            <span>India (IN)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                            <input type="checkbox" checked={geoSG} onChange={(e) => setGeoSG(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                            <span>Singapore (SG)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                            <input type="checkbox" checked={geoUS} onChange={(e) => setGeoUS(e.target.checked)} disabled={uploading} style={{ width: '14px', height: '14px' }} />
+                            <span>USA (US)</span>
+                          </label>
+                        </div>
+                        <input 
+                          type="text"
+                          placeholder="Custom country codes (e.g. CA, DE, GB)"
+                          value={allowedCountries}
+                          onChange={(e) => setAllowedCountries(e.target.value)}
+                          className="cyber-input"
+                          style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                          disabled={uploading}
+                        />
+                      </>
+                    ) : (
+                      <div className="text-xxs text-slate-400 py-1">Not Enabled</div>
+                    )}
+                  </div>
 
-          <div className="form-grid">
-            <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
-              <div className="form-group-row">
-                <div style={{ textAlign: 'left' }}>
-                  <span className="form-group-title" style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Direct Cloud Upload (Signed PUT)</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>Encrypt locally, upload direct (bypasses server).</span>
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', opacity: hasActiveHours ? 1 : 0.8 }}>
+                    <div className="form-group-row" style={{ marginBottom: '8px', justifyContent: 'space-between' }}>
+                      <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Active Download Hours</span>
+                      </span>
+                      <input 
+                        type="checkbox"
+                        checked={hasActiveHours}
+                        onChange={(e) => {
+                          setHasActiveHours(e.target.checked);
+                          if (!e.target.checked) {
+                            setAccessWindowStart('');
+                            setAccessWindowEnd('');
+                          }
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                    {hasActiveHours ? (
+                      <div className="form-group-row" style={{ gap: '8px', alignItems: 'center' }}>
+                        <input 
+                          type="time"
+                          value={accessWindowStart}
+                          onChange={(e) => setAccessWindowStart(e.target.value)}
+                          className="cyber-input"
+                          style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
+                          disabled={uploading}
+                        />
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+                        <input 
+                          type="time"
+                          value={accessWindowEnd}
+                          onChange={(e) => setAccessWindowEnd(e.target.value)}
+                          className="cyber-input"
+                          style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px' }}
+                          disabled={uploading}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-xxs text-slate-400 py-1">Not Enabled</div>
+                    )}
+                  </div>
                 </div>
-                <input 
-                  type="checkbox"
-                  checked={isDirect}
-                  onChange={(e) => setIsDirect(e.target.checked)}
-                  className="cursor-pointer"
-                  disabled={uploading}
-                />
+
+                <div className="form-grid">
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', opacity: hasAllowedIp ? 1 : 0.8 }}>
+                    <div className="form-group-row" style={{ marginBottom: '8px', justifyContent: 'space-between' }}>
+                      <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Allowed Receiver IP</span>
+                      <input 
+                        type="checkbox"
+                        checked={hasAllowedIp}
+                        onChange={(e) => {
+                          setHasAllowedIp(e.target.checked);
+                          if (!e.target.checked) setAllowedIp('');
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                    <input 
+                      type="text"
+                      placeholder={hasAllowedIp ? "e.g. 192.168.1.100" : "Not Enabled"}
+                      value={allowedIp}
+                      onChange={(e) => setAllowedIp(e.target.value)}
+                      className="cyber-input"
+                      style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                      disabled={!hasAllowedIp || uploading}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px', opacity: hasRecipientEmail ? 1 : 0.8 }}>
+                    <div className="form-group-row" style={{ marginBottom: '8px', justifyContent: 'space-between' }}>
+                      <span className="form-group-title" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Recipient Email Verification</span>
+                      <input 
+                        type="checkbox"
+                        checked={hasRecipientEmail}
+                        onChange={(e) => {
+                          setHasRecipientEmail(e.target.checked);
+                          if (!e.target.checked) setNotificationEmail('');
+                        }}
+                        className="cursor-pointer"
+                        disabled={uploading}
+                      />
+                    </div>
+                    <input 
+                      type="email"
+                      placeholder={hasRecipientEmail ? "e.g. verifier@domain.com" : "Not Enabled"}
+                      value={notificationEmail}
+                      onChange={(e) => setNotificationEmail(e.target.value)}
+                      className="cyber-input"
+                      style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                      disabled={!hasRecipientEmail || uploading}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <button 
