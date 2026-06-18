@@ -14,10 +14,20 @@ function initializeFirebase() {
   const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   const bucketName = process.env.FIREBASE_STORAGE_BUCKET;
 
-  if (serviceAccountPath && bucketName && fs.existsSync(serviceAccountPath)) {
+  if (serviceAccountPath && bucketName) {
     try {
       admin = require('firebase-admin');
-      const serviceAccount = require(path.resolve(serviceAccountPath));
+      let serviceAccount: any;
+
+      const trimmedKey = serviceAccountPath.trim();
+      if (fs.existsSync(trimmedKey)) {
+        serviceAccount = require(path.resolve(trimmedKey));
+      } else if (trimmedKey.startsWith('{')) {
+        serviceAccount = JSON.parse(trimmedKey);
+      } else {
+        const decoded = Buffer.from(trimmedKey, 'base64').toString('utf8');
+        serviceAccount = JSON.parse(decoded);
+      }
       
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
@@ -31,7 +41,7 @@ function initializeFirebase() {
       console.warn('[STORAGE] Failed to initialize Firebase Admin SDK, falling back to local storage:', error);
     }
   } else {
-    console.log('[STORAGE] Firebase config missing or key file not found. Storage: Local Filesystem.');
+    console.log('[STORAGE] Firebase config missing. Storage: Local Filesystem.');
   }
 }
 

@@ -136,7 +136,6 @@ export default function App() {
 
       {view === 'dashboard' ? (
         !showApp ? (
-          /* PAGE 1: Landing Page */
           <>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div className="instructions-container">
@@ -146,35 +145,35 @@ export default function App() {
                     <span className="step-num">1</span>
                     <div className="step-content">
                       <h3 className="step-title">Upload Your File</h3>
-                      <p className="step-desc">Add the file you want to share securely.</p>
+                      <p className="step-desc">Securely upload your file, note, image, or document.</p>
                     </div>
                   </div>
                   <div className="instruction-item">
                     <span className="step-num">2</span>
                     <div className="step-content">
-                      <h3 className="step-title">Set Protection Options</h3>
-                      <p className="step-desc">Choose an expiry time, add a password, or enable a one-time download for extra security.</p>
+                      <h3 className="step-title">Customize Security Controls</h3>
+                      <p className="step-desc">Choose an expiry time, add a password, enable one-time downloads, restrict access by IP or location, require email verification, or enable secure viewing mode.</p>
                     </div>
                   </div>
                   <div className="instruction-item">
                     <span className="step-num">3</span>
                     <div className="step-content">
-                      <h3 className="step-title">Share the Link</h3>
-                      <p className="step-desc">Send the secure link to anyone you want to access the file.</p>
+                      <h3 className="step-title">Share Securely</h3>
+                      <p className="step-desc">Generate a private link and instantly share it via URL or QR code.</p>
                     </div>
                   </div>
                   <div className="instruction-item">
                     <span className="step-num">4</span>
                     <div className="step-content">
-                      <h3 className="step-title">Recipient Downloads</h3>
-                      <p className="step-desc">The recipient opens the link and enters the password (if required).</p>
+                      <h3 className="step-title">Verify & Access</h3>
+                      <p className="step-desc">Recipients complete any required security checks such as passwords, OTP verification, IP validation, or location restrictions before viewing the content.</p>
                     </div>
                   </div>
                   <div className="instruction-item">
                     <span className="step-num">5</span>
                     <div className="step-content">
-                      <h3 className="step-title">Auto-Delete</h3>
-                      <p className="step-desc">The file automatically disappears once it expires or reaches its download limit.</p>
+                      <h3 className="step-title">Automatic Shredding</h3>
+                      <p className="step-desc">Files are automatically deleted when they expire, reach their download limit, or are destroyed using Burn-on-Read mode.</p>
                     </div>
                   </div>
                 </div>
@@ -201,7 +200,6 @@ export default function App() {
             </div>
           </>
         ) : (
-          /* PAGE 2: Actual Application Interface */
           <>
             <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%', maxWidth: '680px', margin: '0 auto 16px auto' }}>
               <button
@@ -255,7 +253,6 @@ export default function App() {
           </>
         )
       ) : (
-        /* DOWNLOAD CHALLENGE ROUTE */
         <main className="main-content">
           <div className="download-challenge-wrapper">
             <DownloadChallenge uuid={vaultUuid!} onBackToDashboard={navigateToDashboard} />
