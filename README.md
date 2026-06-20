@@ -1,8 +1,8 @@
 # SecuLink
 
-SecuLink is a full-stack web application that provides a secure, zero-knowledge, expiring file sharing platform. It enables users to upload, encrypt, and share files, notes, or documents with custom expiration leases, password protection, geofencing, IP restrictions, email verification, and view-only permissions.
+SecuLink is a full-stack web application that provides a secure, expiring file sharing platform. It enables users to upload, encrypt, and share files, notes, or documents with custom expiration leases, password protection, geofencing, IP restrictions, email verification, and view-only permissions.
 
-⚝ Features
+### ⚝ Features
 - **Private & Secure Storage**: Files and text notes are encrypted inside your browser before uploading. The server never sees your passwords or unencrypted files.
 - **Self-Destructing Links**: Set sharing links to automatically expire after a few minutes or hours.
 - **Password Locked**: Secure files with custom access passwords so only authorized people can view them.
@@ -13,17 +13,16 @@ SecuLink is a full-stack web application that provides a secure, zero-knowledge,
 - **Mobile QR Codes**: Instantly scan dynamic QR codes to access files securely from a smartphone.
 - **Secure View-Only Mode**: Display documents directly in the browser with disabled download buttons, disabled right-click, and custom watermarks showing the recipient's IP.
 - **Sensitive Data Scanner**: Scans and warns you automatically if you are uploading files containing credit cards, passwords, or API keys.
-- **Secure Ephemeral Chat**: Exchange end-to-end encrypted notes and text messages inside the same self-destructing vault.
 - **Activity & History Logs**: Track when sharing links are created, accessed, or shredded.
 - **Emergency Wipe (System Nuke)**: A single click destroys all active file sharing allocations and wipes metadata from the database instantly.
 
-⚝ Tech Stack
+### ⚝ Tech Stack
 - Frontend: React.js, TypeScript, Custom Vanilla CSS, Lucide Icons
 - Backend: Node.js, Express, Multer
 - Database: SQLite, PostgreSQL, Sequelize ORM
 - File Storage: Local Filesystem, Firebase Cloud Storage
 
-⚝ System Architecture
+### ⚝ System Architecture <br>
 SecuLink is designed around zero-knowledge security and access control. The system is divided into five high-level areas:
 - Frontend: The client-side application handles user interface rendering, theme management, local file previews, and browser-side encryption. Keys are derived locally in the browser using PBKDF2/WebCrypto APIs so that plain text payloads are never transmitted across the network.
 - Encryption Layer: This layer manages the encryption and decryption processes. Payloads are encrypted using AES-256-GCM client-side. The metadata security envelopes are stored in the database, optionally encrypted with a server-managed master secret.
@@ -31,7 +30,7 @@ SecuLink is designed around zero-knowledge security and access control. The syst
 - Database: Managed via Sequelize ORM, the database stores file records, expiration leases, chat histories, and audit logs. It supports SQLite for local testing and PostgreSQL for production.
 - File Storage: Manages physical file assets. Files are written locally to the server's uploads folder using stream-based operations, or pushed to a Firebase Cloud Storage bucket.
 
-⚝ Installation & Setup
+### ⚝ Installation & Setup
 1. Clone the Repository
    ```bash
    git clone https://github.com/Susheyyy/SecuLink.git
@@ -66,15 +65,14 @@ SecuLink is designed around zero-knowledge security and access control. The syst
    npm run dev
    ```
 
-⚝ How to Use
+### ⚝ How to Use
 - Upload Files: Drag and drop files or write a secure text note in the uploader dashboard.
 - Configure Access Rules: Choose the expiration duration (compulsory) and customize other settings under Advanced Security Options (password, geofencing, IP lock, or OTP verification).
 - Generate Secure Link: Click "Generate Link" to encrypt the file, create the database record, and display the private URL or dynamic QR code.
 - Recipient Verification: The recipient accesses the private link, completes the password or OTP challenge, and downloads or views the file securely.
 - Monitor and Purge: Track active allocations in the "Active Shares" panel, view audit logs, or trigger "Purge All Shares" to wipe everything immediately.
 
-⚝ Live Demo
-Live demo link: Coming soon.
+### ⚝ Live Demo
 
-If you have feedback or ideas, feel free to reach out!
+If you have feedback or ideas, feel free to reach out! <br>
 If you like this project, consider giving it a star!

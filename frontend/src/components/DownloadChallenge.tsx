@@ -751,7 +751,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
   return (
     <div className="glass-panel max-w-md w-full mx-auto flex flex-col items-center justify-center space-y-6 text-center">
       <div className="flex items-center justify-center space-x-2 border-b border-slate-200 pb-4 w-full text-center" style={{ borderColor: 'var(--border-color)' }}>
-        <Shield className="text-indigo-600 w-5 h-5 mx-auto" />
         <span className="brand-title" style={{ fontSize: '15px', textAlign: 'center' }}>
           {meta.shareType === 'chat' ? 'Secure Chat Handshake' : meta.shareType === 'note' ? 'Secure Note Handshake' : 'Secure File Handshake'}
         </span>
@@ -846,7 +845,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
                     </>
                   ) : (
                     <>
-                      <Shield className="w-4 h-4" />
                       <span>Verify Code</span>
                     </>
                   )}

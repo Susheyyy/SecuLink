@@ -490,7 +490,6 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
                 </div>
               ) : file ? (
                 <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
-                  <Shield className="w-10 h-10 text-indigo-600" style={{ color: 'var(--color-accent)' }} />
                   <div className="text-sm font-bold text-slate-800 max-w-[250px] truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</div>
                   <div className="text-xs text-slate-500" style={{ color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(1)} KB</div>
                   <button 
@@ -914,7 +913,6 @@ export const UploadPanel: React.FC<UploadPanelProps> = ({ addLog, onUploadSucces
         <div className="app-container" style={{ alignItems: 'center' }}>
           <div className="app-container" style={{ gap: '8px', alignItems: 'center' }}>
             <div className="header-badge" style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}>
-              <Shield className="w-4 h-4" />
               <span>Secure Link Generated</span>
             </div>
             <p className="text-xs text-slate-500 max-w-[300px]" style={{ textAlign: 'center' }}>
