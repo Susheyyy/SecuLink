@@ -30,6 +30,48 @@ SecuLink is designed around zero-knowledge security and access control. The syst
 - Database: Managed via Sequelize ORM, the database stores file records, expiration leases, chat histories, and audit logs. It supports SQLite for local testing and PostgreSQL for production.
 - File Storage: Manages physical file assets. Files are written locally to the server's uploads folder using stream-based operations, or pushed to a Firebase Cloud Storage bucket.
 
+```
+SecuLink/
+├── backend/                  # Node.js + Express backend 
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── database.ts   # Sequelize database connection configuration
+│   │   ├── models/           
+│   │   │   ├── file.ts       # File metadata schema & constraints
+│   │   │   ├── index.ts      # Database connection & associations initializer
+│   │   │   ├── log.ts        # Audit trails & logs schema
+│   │   │   └── message.ts    # Secure ephemeral chat messages schema
+│   │   ├── routes/
+│   │   │   └── vault.ts      # Express routes for upload, challenge verification, download, and nuke
+│   │   ├── services/         # Application core services
+│   │   │   ├── cleanupService.ts # Cron-like service for purging expired files
+│   │   │   ├── cryptoService.ts  # Verification helpers & secure envelopes
+│   │   │   ├── databaseService.ts # DB operations manager for files, logs, and wipe operations
+│   │   │   ├── emailService.ts   # SMTP service for sending OTP passcodes
+│   │   │   ├── storageService.ts # Storage backend wrapper (Local & Firebase Storage)
+│   │   │   └── virusScanService.ts # ClamAV/Sensitive data scanner (PII, API keys)
+│   │   ├── server.ts         # Main entry point for backend API server
+│   │   └── verify.ts         # Helper methods for security checks (IP, country, time, email OTP)
+│   ├── package.json          # Node dependencies & scripts
+│   └── tsconfig.json         # TypeScript compiler configurations
+├── frontend/                 # React + TypeScript + Vite frontend 
+│   ├── src/
+│   │   ├── components/       
+│   │   │   ├── ConsolePanel.tsx      # System console log dashboard & emergency wipe control
+│   │   │   ├── DownloadChallenge.tsx # Verification gateway, decryption, & secure view-only mode
+│   │   │   ├── UploadPanel.tsx       # File dropzone & security policy configuration panel
+│   │   │   └── VaultStatus.tsx       # Live status tracker for active files & audit histories
+│   │   ├── utils/
+│   │   │   └── cryptoWorker.ts       # Web Worker for client-side PBKDF2/AES-256-GCM crypto
+│   │   ├── App.css           
+│   │   ├── App.tsx           
+│   │   ├── index.css         
+│   │   └── main.tsx          
+│   ├── package.json          # Frontend dependencies & scripts
+│   └── vite.config.ts        # Vite build tool and dev server config
+└── README.md                 # Project documentation
+```
+
 ### ⚝ Installation & Setup
 1. Clone the Repository
    ```bash
