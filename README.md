@@ -19,8 +19,8 @@ SecuLink is a full-stack web application that provides a secure, expiring file s
 ### ⚝ Tech Stack
 - Frontend: React.js, TypeScript, Custom Vanilla CSS, Lucide Icons
 - Backend: Node.js, Express, Multer
-- Database: SQLite, PostgreSQL, Sequelize ORM
-- File Storage: Local Filesystem, Firebase Cloud Storage
+- Database: SQLite, Supabase, 
+- File Storage: Local Filesystem, Supabase S3
 
 ### ⚝ System Architecture <br>
 SecuLink is designed around zero-knowledge security and access control. The system is divided into five high-level areas:
@@ -88,13 +88,21 @@ SecuLink/
    PORT=5000
    NODE_ENV=development
    SECRET_KEY=your_32_character_master_secret_here
-   FIREBASE_STORAGE_BUCKET=
-   FIREBASE_SERVICE_ACCOUNT_KEY=
+  
+   S3_ENDPOINT=
+   S3_REGION=
+   S3_BUCKET_NAME=
+   S3_ACCESS_KEY_ID=
+   S3_SECRET_ACCESS_KEY=
+
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=587
    SMTP_USER=your_email@gmail.com
    SMTP_PASS=your_app_specific_password_here
+   DATABASE_URL=
    EMAIL_FROM=noreply@seculink.com
+   CLAMAV_HOST=
+   CLAMAV_PORT=
    ```
    Run the backend server:
    ```bash

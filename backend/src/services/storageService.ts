@@ -1,84 +1,81 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 dotenv.config();
 
-let admin: any = null;
-let bucket: any = null;
-let useFirebase = false;
-
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
-function initializeFirebase() {
-  const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  const bucketName = process.env.FIREBASE_STORAGE_BUCKET;
+let s3Client: S3Client | null = null;
+let s3BucketName = '';
 
-  if (serviceAccountPath && bucketName) {
+function initializeS3() {
+  const {
+    S3_ENDPOINT,
+    S3_REGION,
+    S3_BUCKET_NAME,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY
+  } = process.env;
+
+  if (S3_ENDPOINT && S3_REGION && S3_BUCKET_NAME && S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY) {
     try {
-      admin = require('firebase-admin');
-      let serviceAccount: any;
-
-      const trimmedKey = serviceAccountPath.trim();
-      if (fs.existsSync(trimmedKey)) {
-        serviceAccount = require(path.resolve(trimmedKey));
-      } else if (trimmedKey.startsWith('{')) {
-        serviceAccount = JSON.parse(trimmedKey);
-      } else {
-        const decoded = Buffer.from(trimmedKey, 'base64').toString('utf8');
-        serviceAccount = JSON.parse(decoded);
-      }
-      
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        storageBucket: bucketName
+      s3Client = new S3Client({
+        region: S3_REGION,
+        endpoint: S3_ENDPOINT,
+        credentials: {
+          accessKeyId: S3_ACCESS_KEY_ID,
+          secretAccessKey: S3_SECRET_ACCESS_KEY,
+        },
+        forcePathStyle: true,
       });
-      
-      bucket = admin.storage().bucket();
-      useFirebase = true;
-      console.log('[STORAGE] Firebase Admin SDK initialized. Storage: Cloud Bucket.');
+      s3BucketName = S3_BUCKET_NAME;
+      console.log('[STORAGE] S3-compatible cloud storage initialized.');
     } catch (error) {
-      console.warn('[STORAGE] Failed to initialize Firebase Admin SDK, falling back to local storage:', error);
+      console.warn('[STORAGE] Failed to initialize S3 client, falling back to local storage:', error);
     }
   } else {
-    console.log('[STORAGE] Firebase config missing. Storage: Local Filesystem.');
+    console.log('[STORAGE] S3 configuration missing. Storage: Local Filesystem.');
   }
 }
 
-initializeFirebase();
+initializeS3();
 
-export function isFirebaseEnabled(): boolean {
-  return useFirebase;
+export function isCloudStorageEnabled(): boolean {
+  return s3Client !== null;
 }
 
-export function getFirestoreDB(): any {
-  if (useFirebase && admin) {
-    return admin.firestore();
-  }
-  return null;
+export function getS3Client(): S3Client | null {
+  return s3Client;
 }
 
-export function getStorageBucket(): any {
-  if (useFirebase && bucket) {
-    return bucket;
-  }
-  return null;
+export function getS3BucketName(): string {
+  return s3BucketName;
 }
 
 export async function uploadEncryptedFile(fileHash: string, ciphertext: Buffer): Promise<string> {
-  if (useFirebase && bucket) {
-    const file = bucket.file(fileHash);
-    await file.save(ciphertext, {
-      metadata: {
-        contentType: 'application/octet-stream',
-        metadata: {
-          encrypted: 'true',
-          by: 'SecuLink'
-        }
+  if (s3Client) {
+    const command = new PutObjectCommand({
+      Bucket: s3BucketName,
+      Key: fileHash,
+      Body: ciphertext,
+      ContentType: 'application/octet-stream',
+      Metadata: {
+        encrypted: 'true',
+        by: 'SecuLink'
       }
     });
-    console.log(`[STORAGE] Encrypted payload uploaded to Firebase Storage: ${fileHash}`);
-    return `firebase://${bucket.name}/${fileHash}`;
+    
+    await s3Client.send(command);
+    console.log(`[STORAGE] Encrypted payload uploaded to Cloud Storage: ${fileHash}`);
+    return `s3://${s3BucketName}/${fileHash}`;
   } else {
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -91,10 +88,22 @@ export async function uploadEncryptedFile(fileHash: string, ciphertext: Buffer):
 }
 
 export async function downloadEncryptedFile(fileHash: string): Promise<Buffer> {
-  if (useFirebase && bucket) {
-    const file = bucket.file(fileHash);
-    const [content] = await file.download();
-    return content;
+  if (s3Client) {
+    const command = new GetObjectCommand({
+      Bucket: s3BucketName,
+      Key: fileHash
+    });
+    
+    const response = await s3Client.send(command);
+    if (!response.Body) {
+      throw new Error('No body returned from S3');
+    }
+    
+    const chunks: Buffer[] = [];
+    for await (const chunk of response.Body as any) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
   } else {
     const filePath = path.join(UPLOADS_DIR, fileHash);
     if (!fs.existsSync(filePath)) {
@@ -106,13 +115,13 @@ export async function downloadEncryptedFile(fileHash: string): Promise<Buffer> {
 
 export async function deleteFromStorage(fileHash: string): Promise<void> {
   try {
-    if (useFirebase && bucket) {
-      const file = bucket.file(fileHash);
-      const [exists] = await file.exists();
-      if (exists) {
-        await file.delete();
-        console.log(`[STORAGE] Deleted from Firebase Storage: ${fileHash}`);
-      }
+    if (s3Client) {
+      const command = new DeleteObjectCommand({
+        Bucket: s3BucketName,
+        Key: fileHash
+      });
+      await s3Client.send(command);
+      console.log(`[STORAGE] Deleted from Cloud Storage: ${fileHash}`);
     } else {
       const filePath = path.join(UPLOADS_DIR, fileHash);
       if (fs.existsSync(filePath)) {
@@ -126,14 +135,15 @@ export async function deleteFromStorage(fileHash: string): Promise<void> {
 }
 
 export async function generateTemporaryDownloadUrl(fileHash: string, expiresAt: Date): Promise<string> {
-  if (useFirebase && bucket) {
-    const file = bucket.file(fileHash);
-    
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: expiresAt
+  if (s3Client) {
+    const command = new GetObjectCommand({
+      Bucket: s3BucketName,
+      Key: fileHash
     });
     
+    const expiresInSeconds = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    
+    const url = await getSignedUrl(s3Client, command, { expiresIn: expiresInSeconds });
     return url;
   }
   

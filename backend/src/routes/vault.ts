@@ -337,18 +337,22 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       passwordHash = await argon2.hash(password);
     }
 
-    const { isFirebaseEnabled, getStorageBucket } = require('../services/storageService');
+    const { isCloudStorageEnabled, getS3Client, getS3BucketName } = require('../services/storageService');
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     let uploadUrl = '';
 
-    if (isFirebaseEnabled()) {
-      const bucket = getStorageBucket();
-      const fileRef = bucket.file(fileHash);
-      const [url] = await fileRef.getSignedUrl({
-        action: 'write',
-        expires: Date.now() + 15 * 60 * 1000,
-        contentType: 'application/octet-stream'
+    if (isCloudStorageEnabled()) {
+      const s3Client = getS3Client();
+      const bucketName = getS3BucketName();
+      
+      const command = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileHash,
+        ContentType: 'application/octet-stream'
       });
-      uploadUrl = url;
+      
+      uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 15 * 60 });
     } else {
       uploadUrl = `http://localhost:${process.env.PORT || 5000}/api/vault/direct-upload/${fileHash}`;
     }
@@ -388,7 +392,7 @@ router.post('/signed-upload-url', async (req: Request, res: Response): Promise<a
       uuid: fileRecord.id,
       expiresAt: fileRecord.expiresAt,
       uploadUrl: uploadUrl,
-      isFirebase: isFirebaseEnabled()
+      isCloudStorage: isCloudStorageEnabled()
     });
   } catch (error) {
     console.error('[SIGNED UPLOAD] Error:', error);

@@ -137,7 +137,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatPollRef = useRef<number | null>(null);
 
-  // OTP Access States
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [otpEmail, setOtpEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -145,7 +144,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
 
-  // Secure View Only States
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
 
@@ -212,13 +210,13 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
   useEffect(() => {
     const hashParts = window.location.hash.split('#');
     if (hashParts[2] && hashParts[2].length === 64) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+
       setRawKeyHex(hashParts[2]);
     }
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     fetchChallengeInfo();
   }, [uuid, fetchChallengeInfo]);
 
@@ -252,7 +250,6 @@ export const DownloadChallenge: React.FC<DownloadChallengeProps> = ({ uuid, onBa
 
   useEffect(() => {
     if (isChatUnlocked && meta && meta.shareType === 'chat') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchChatLogs();
       chatPollRef.current = window.setInterval(fetchChatLogs, 3000);
     }

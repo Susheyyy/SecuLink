@@ -4,7 +4,7 @@ import type { ConsoleLogEntry } from './components/ConsolePanel';
 import { UploadPanel } from './components/UploadPanel';
 import { VaultStatus } from './components/VaultStatus';
 import { DownloadChallenge } from './components/DownloadChallenge';
-import { Terminal, AlertOctagon, Sun, Moon } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 
 interface SavedLink {
   uuid: string;
@@ -38,7 +38,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ConsoleLogEntry[]>([]);
-  const [isPurging, setIsPurging] = useState(false);
+
   const purgeTimeoutRef = useRef<number | null>(null);
   const welcomedRef = useRef(false);
 
@@ -91,10 +91,8 @@ export default function App() {
 
   const handlePurgeAll = useCallback(() => {
     setLinks([]);
-    setIsPurging(true);
     if (purgeTimeoutRef.current) window.clearTimeout(purgeTimeoutRef.current);
     purgeTimeoutRef.current = window.setTimeout(() => {
-      setIsPurging(false);
       addLog('info', 'All allocations and metadata permanently purged.');
     }, 2000);
   }, [addLog]);

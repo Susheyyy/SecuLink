@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Shield, Link as LinkIcon, Check, Copy, MessageSquare, FileText, Globe, Clock } from 'lucide-react';
+import { Upload, Link as LinkIcon, Check, Copy, MessageSquare, FileText, Globe, Clock } from 'lucide-react';
 import type { ConsoleLogEntry } from './ConsolePanel';
 import { encryptInWorker } from '../utils/cryptoWorker';
 
