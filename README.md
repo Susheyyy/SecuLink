@@ -19,16 +19,16 @@ SecuLink is a full-stack web application that provides a secure, expiring file s
 ### ⚝ Tech Stack
 - Frontend: React.js, TypeScript, Custom Vanilla CSS, Lucide Icons
 - Backend: Node.js, Express, Multer
-- Database: SQLite, Supabase, 
+- Database: SQLite, Supabase
 - File Storage: Local Filesystem, Supabase S3
 
 ### ⚝ System Architecture <br>
 SecuLink is designed around zero-knowledge security and access control. The system is divided into five high-level areas:
 - Frontend: The client-side application handles user interface rendering, theme management, local file previews, and browser-side encryption. Keys are derived locally in the browser using PBKDF2/WebCrypto APIs so that plain text payloads are never transmitted across the network.
 - Encryption Layer: This layer manages the encryption and decryption processes. Payloads are encrypted using AES-256-GCM client-side. The metadata security envelopes are stored in the database, optionally encrypted with a server-managed master secret.
-- Backend API: A Node.js Express server validates access constraints (expiry, IP boundaries, active time windows, country restrictions). It also coordinates automated malware scanning, SMTP email alerts, and the ephemeral chat messages.
-- Database: Managed via Sequelize ORM, the database stores file records, expiration leases, chat histories, and audit logs. It supports SQLite for local testing and PostgreSQL for production.
-- File Storage: Manages physical file assets. Files are written locally to the server's uploads folder using stream-based operations, or pushed to a Firebase Cloud Storage bucket.
+- Backend API: A Node.js Express server validates access constraints (expiry, IP boundaries, active time windows, country restrictions). It also coordinates automated malware scanning, Resend email alerts, and the ephemeral chat messages.
+- Database: Managed via Sequelize ORM, the database stores file records, expiration leases, chat histories, and audit logs. It supports SQLite for local testing and Supabase PostgreSQL for production.
+- File Storage: Manages physical file assets. Files are written locally to the server's uploads folder using stream-based operations, or pushed to a Supabase S3 bucket.
 
 ```
 SecuLink/
@@ -47,8 +47,8 @@ SecuLink/
 │   │   │   ├── cleanupService.ts # Cron-like service for purging expired files
 │   │   │   ├── cryptoService.ts  # Verification helpers & secure envelopes
 │   │   │   ├── databaseService.ts # DB operations manager for files, logs, and wipe operations
-│   │   │   ├── emailService.ts   # SMTP service for sending OTP passcodes
-│   │   │   ├── storageService.ts # Storage backend wrapper (Local & Firebase Storage)
+│   │   │   ├── emailService.ts   # Resend email service for sending OTP passcodes
+│   │   │   ├── storageService.ts # Storage backend wrapper (Local & Supabase S3 Storage)
 │   │   │   └── virusScanService.ts # ClamAV/Sensitive data scanner (PII, API keys)
 │   │   ├── server.ts         # Main entry point for backend API server
 │   │   └── verify.ts         # Helper methods for security checks (IP, country, time, email OTP)
