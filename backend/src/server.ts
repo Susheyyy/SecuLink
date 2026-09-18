@@ -2,12 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import dotenv from 'dotenv';
 import { sequelize } from './config/database';
 import vaultRouter from './routes/vault';
 import { initCleanupJob, UPLOADS_DIR } from './services/cleanupService';
 
 dotenv.config();
+
+// Force IPv4 first to prevent ENETUNREACH on Render for IPv6 addresses
+dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
