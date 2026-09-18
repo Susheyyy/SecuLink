@@ -123,6 +123,7 @@ SecuLink/
 - Monitor and Purge: Track active allocations in the "Active Shares" panel, view audit logs, or trigger "Purge All Shares" to wipe everything immediately.
 
 ### ⚝ Live Demo
+https://seculink.vercel.app/
 
 If you have feedback or ideas, feel free to reach out! <br>
 If you like this project, consider giving it a star!
