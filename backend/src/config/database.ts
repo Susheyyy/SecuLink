@@ -1,7 +1,10 @@
 import { Sequelize } from 'sequelize';
 import dotenv from 'dotenv';
 import path from 'path';
+import dns from 'dns';
 
+// Force IPv4 first to prevent ENETUNREACH on Render for IPv6 addresses
+dns.setDefaultResultOrder('ipv4first');
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
